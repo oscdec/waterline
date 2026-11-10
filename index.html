@@ -58,7 +58,8 @@ ul{list-style:none;margin:0;padding:0}
 .check svg{width:16px;height:16px;opacity:0;color:var(--bg)}
 .task.done .check i{background:var(--ink)}
 .task.done .check svg{opacity:1}
-.txt{flex:1;min-width:0;overflow-wrap:anywhere;padding:6px 0}
+.txt{flex:1;min-width:0;overflow-wrap:anywhere;padding:6px 0;text-align:left}
+button.txt{align-self:stretch}
 .task.done .txt{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1px}
 .tag{display:block;font-size:13px;color:var(--muted);text-decoration:none}
 
@@ -117,6 +118,9 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 @media (prefers-color-scheme: dark){.danger{color:#F0A99C}}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 100px);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:20px;font-size:15px;opacity:0;pointer-events:none;transition:opacity .25s;max-width:86vw;text-align:center}
 #toast.on{opacity:1}
+#toast.act{pointer-events:auto;display:flex;align-items:center;gap:6px;padding:2px 8px 2px 18px}
+.undo{min-height:44px;padding:0 10px;font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.rowmain{touch-action:pan-y}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (prefers-reduced-motion: reduce){*{transition:none !important}}
 </style>
@@ -202,11 +206,21 @@ window.addEventListener('appinstalled', function(){
   if (!sheet.open) render();
 });
 
-function toast(msg){
-  toastEl.textContent = msg;
+var undoFn = null;
+function toast(msg, undo){
+  undoFn = undo || null;
+  toastEl.innerHTML = esc(msg) + (undo ? ' <button class="undo" data-act="undo">Undo</button>' : '');
   toastEl.classList.add('on');
+  toastEl.classList.toggle('act', !!undo);
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(function(){ toastEl.classList.remove('on'); }, 2200);
+  toastTimer = setTimeout(function(){ toastEl.classList.remove('on', 'act'); undoFn = null; }, undo ? 6000 : 2200);
+}
+function letGo(id){
+  var before = JSON.stringify(S);
+  removeTask(id); save();
+  if (sheet.open) sheet.close();
+  render();
+  toast('Let go.', function(){ S = JSON.parse(before); save(); render(); });
 }
 
 function rollover(){
@@ -237,6 +251,7 @@ function plannedTomorrow(){ return S.tomorrow.filter(function(id){ return S.task
 function tagLine(t, extra){
   var bits = [];
   if (t.tag && TAG_LABEL[t.tag]) bits.push(TAG_LABEL[t.tag]);
+  if (t.notes) bits.push('Has a note');
   if (extra) bits.push(extra);
   return bits.length ? '<span class="tag">' + esc(bits.join(' · ')) + '</span>' : '';
 }
@@ -260,7 +275,7 @@ function todayHTML(){
       var done = S.done.indexOf(id) >= 0;
       h += '<li class="task' + (done ? ' done' : '') + '">' +
            '<button class="check" data-act="toggle" data-id="' + id + '" aria-pressed="' + done + '" aria-label="' + (done ? 'Mark not done: ' : 'Mark done: ') + esc(t.text) + '"><i>' + I.check + '</i></button>' +
-           '<span class="txt">' + esc(t.text) + tagLine(t) + '</span>' +
+           '<button class="txt" data-act="edit" data-id="' + id + '">' + esc(t.text) + tagLine(t) + '</button>' +
            (done ? '' : '<button class="iconbtn" data-act="sendback" data-id="' + id + '" aria-label="Send back below the surface: ' + esc(t.text) + '">' + I.down + '</button>') +
            '</li>';
     });
@@ -291,7 +306,7 @@ function todayHTML(){
     var evening = new Date().getHours() >= 17;
     h += '<button class="btn ' + (evening ? '' : 'quiet') + '" data-act="pick" data-mode="tomorrow">Plan tomorrow</button>';
   }
-  h += '<button class="btn quiet" data-act="reservoir">Below the surface</button>';
+  h += '<button class="btn quiet" data-act="reservoir">Below The Surface</button>';
   h += '</div>';
   h += '<button class="fab" data-act="capture" aria-label="Add a task">' + I.plus + '</button>';
   return h;
@@ -308,8 +323,8 @@ function staleId(){
 
 function reservoirHTML(){
   var h = '<div class="top"><button class="iconbtn" data-act="home" aria-label="Back to today">' + I.back + '</button>' +
-          '<div class="brand"><span>Below the surface</span></div><span style="width:44px"></span></div>';
-  h += '<p class="muted" style="margin:16px 0 20px">Drag to reorder. What matters most, or soonest, goes at the top.</p>';
+          '<div class="brand"><span>Below The Surface</span></div><span style="width:44px"></span></div>';
+  h += '<p class="muted" style="margin:16px 0 20px">One list, in order: the top is most important, the bottom is whenever. Drag the handle to reorder. Swipe right to let one go.</p>';
   var s = staleId();
   if (s) {
     h += '<div class="ask"><p class="muted" style="font-size:14px">This has been resting a while. Still want it?</p><p>' + esc(S.tasks[s].text) + '</p>' +
@@ -318,7 +333,7 @@ function reservoirHTML(){
   if (!S.reservoir.length) {
     h += '<div class="state"><h2>Still water</h2><p class="muted">Nothing is waiting down here.</p></div>';
   } else {
-    h += '<div class="ends"><span>Most important</span></div><ul class="res" id="res" style="margin:8px 0">';
+    h += '<ul class="res" id="res">';
     S.reservoir.forEach(function(id){
       var t = S.tasks[id]; if (!t) return;
       var asleep = t.notBefore && t.notBefore > S.day;
@@ -326,7 +341,7 @@ function reservoirHTML(){
            '<button class="handle" data-id="' + id + '" aria-label="Reorder: ' + esc(t.text) + '. Use the up and down arrow keys.">' + I.grip + '</button>' +
            '<button class="rowmain" data-act="edit" data-id="' + id + '">' + esc(t.text) + tagLine(t, asleep ? 'Resting until ' + shortDate(t.notBefore) : '') + '</button></li>';
     });
-    h += '</ul><div class="ends"><span>Whenever</span></div>';
+    h += '</ul>';
   }
   h += '<button class="fab" data-act="capture" aria-label="Add a task">' + I.plus + '</button>';
   return h;
@@ -360,22 +375,23 @@ function chipsHTML(name, options, current){
 function openForm(id){
   var t = id ? S.tasks[id] : null;
   form = {id: id || null};
-  var h = '<form class="sheet" id="taskform" novalidate><header><h2 id="sheet-title">' + (t ? 'Edit' : 'Add to the reservoir') + '</h2>' +
+  var h = '<form class="sheet" id="taskform" novalidate><header><h2 id="sheet-title">' + (t ? 'Task' : 'Add to the reservoir') + '</h2>' +
           '<button type="button" class="iconbtn" data-act="close" aria-label="Close">' + I.close + '</button></header>';
   h += '<label class="f">What is it?<textarea name="text" rows="2" maxlength="200" required>' + (t ? esc(t.text) : '') + '</textarea></label>';
   h += '<p class="danger" id="formerr" role="alert" style="font-size:14px;display:none">Write a few words first.</p>';
+  h += '<label class="f">Notes (optional)<textarea name="notes" rows="4" maxlength="2000" style="min-height:110px">' + (t && t.notes ? esc(t.notes) : '') + '</textarea></label>';
   h += '<fieldset><legend>Kind</legend>' + chipsHTML('tag', TAGS, t ? (t.tag || '') : '') + '</fieldset>';
   if (!t) h += '<fieldset><legend>Where does it go?</legend>' + chipsHTML('place', [['bottom', 'Whenever'], ['top', 'Timely, near the top']], 'bottom') + '</fieldset>';
   h += '<label class="f">Not before (optional)<input type="date" name="notBefore" value="' + (t && t.notBefore ? t.notBefore : '') + '"></label>';
   h += '<button class="btn full" type="submit">' + (t ? 'Save' : 'Tuck it away') + '</button>';
   if (t) {
-    h += '<div class="seg" style="justify-content:space-between"><button type="button" class="link" data-act="totop" data-id="' + id + '">Move to the top</button>' +
+    h += '<div class="seg" style="justify-content:space-between">' + (S.reservoir.indexOf(id) >= 0 ? '<button type="button" class="link" data-act="totop" data-id="' + id + '">Move to the top</button>' : '<span></span>') +
          '<button type="button" class="link danger" data-act="letgo" data-id="' + id + '">Let it go</button></div>';
   }
   h += '</form>';
   sheet.innerHTML = h;
   if (!sheet.open) sheet.showModal();
-  var ta = sheet.querySelector('textarea');
+  var ta = sheet.querySelector('textarea[name=text]');
   if (!t) ta.focus();
 }
 
@@ -384,12 +400,13 @@ function submitForm(f){
   if (!text) { document.getElementById('formerr').style.display = 'block'; f.text.focus(); return; }
   var tag = (f.querySelector('input[name=tag]:checked') || {}).value || '';
   var nb = f.notBefore.value || '';
+  var notes = f.notes.value.trim();
   if (form.id && S.tasks[form.id]) {
     var t = S.tasks[form.id];
-    t.text = text; t.tag = tag; t.notBefore = nb; t.touched = Date.now();
+    t.text = text; t.tag = tag; t.notBefore = nb; t.notes = notes; t.touched = Date.now();
   } else {
     var id = uid();
-    S.tasks[id] = {id: id, text: text, tag: tag, notBefore: nb, created: Date.now(), touched: Date.now()};
+    S.tasks[id] = {id: id, text: text, tag: tag, notBefore: nb, notes: notes, created: Date.now(), touched: Date.now()};
     var place = (f.querySelector('input[name=place]:checked') || {}).value;
     if (place === 'top') S.reservoir.unshift(id); else S.reservoir.push(id);
     toast('Tucked away below the surface.');
@@ -490,6 +507,7 @@ document.getElementById('importer').addEventListener('change', function(e){
 });
 
 document.addEventListener('click', function(e){
+  if (swallowClick) { swallowClick = false; e.preventDefault(); return; }
   var el = e.target.closest('[data-act]'); if (!el) return;
   var act = el.dataset.act, id = el.dataset.id;
   if (act === 'toggle') {
@@ -509,7 +527,8 @@ document.addEventListener('click', function(e){
   else if (act === 'home') { view = 'today'; render(); window.scrollTo(0, 0); }
   else if (act === 'close') { sheet.close(); }
   else if (act === 'keep') { S.tasks[id].touched = Date.now(); save(); render(); }
-  else if (act === 'letgo') { removeTask(id); save(); if (sheet.open) sheet.close(); render(); toast('Let go.'); }
+  else if (act === 'letgo') { letGo(id); }
+  else if (act === 'undo') { var u = undoFn; undoFn = null; clearTimeout(toastTimer); toastEl.classList.remove('on', 'act'); if (u) u(); }
   else if (act === 'totop') {
     S.reservoir = [id].concat(S.reservoir.filter(function(x){ return x !== id; }));
     S.tasks[id].touched = Date.now();
@@ -544,6 +563,41 @@ sheet.addEventListener('input', function(e){
   if (e.target.name === 'text') { var er = document.getElementById('formerr'); if (er) er.style.display = 'none'; }
 });
 sheet.addEventListener('click', function(e){ if (e.target === sheet) sheet.close(); });
+
+var swipe = null, swallowClick = false;
+function swipeReset(row){
+  row.style.transition = 'transform .2s, opacity .2s';
+  row.style.transform = ''; row.style.opacity = '';
+  setTimeout(function(){ row.style.transition = ''; }, 220);
+}
+document.addEventListener('pointerdown', function(e){
+  var main = e.target.closest('.rowmain'); if (!main || view !== 'reservoir') return;
+  swipe = {row: main.closest('.row'), el: main, x: e.clientX, y: e.clientY, pid: e.pointerId, on: false};
+});
+document.addEventListener('pointermove', function(e){
+  if (!swipe || e.pointerId !== swipe.pid) return;
+  var dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+  if (!swipe.on) {
+    if (Math.abs(dy) > 10 && Math.abs(dy) >= Math.abs(dx)) { swipe = null; return; }
+    if (dx > 10 && dx > Math.abs(dy)) {
+      swipe.on = true; swipe.row.style.transition = 'none';
+      try { swipe.el.setPointerCapture(e.pointerId); } catch (err) {}
+    } else return;
+  }
+  var x = Math.max(0, dx);
+  swipe.row.style.transform = 'translateX(' + x + 'px)';
+  swipe.row.style.opacity = Math.max(.25, 1 - x / 260);
+});
+function endSwipe(e, cancelled){
+  if (!swipe || e.pointerId !== swipe.pid) return;
+  var sw = swipe; swipe = null;
+  if (!sw.on) return;
+  swallowClick = true; setTimeout(function(){ swallowClick = false; }, 80);
+  if (!cancelled && e.clientX - sw.x > 110) letGo(sw.row.dataset.id);
+  else swipeReset(sw.row);
+}
+document.addEventListener('pointerup', function(e){ endSwipe(e, false); });
+document.addEventListener('pointercancel', function(e){ endSwipe(e, true); });
 
 var drag = null;
 document.addEventListener('pointerdown', function(e){
