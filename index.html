@@ -476,7 +476,7 @@ function candidates(filtered){
   return ids;
 }
 function openPicker(mode){
-  pick = {mode: mode, sel: {}, tag: '', shown: 6, limit: pickLimit(mode)};
+  pick = {mode: mode, sel: {}, tag: '', shown: 5, limit: pickLimit(mode)};
   if (mode === 'tomorrow') plannedTomorrow().forEach(function(id){ pick.sel[id] = true; });
   renderPicker();
   if (!sheet.open) sheet.showModal();
@@ -486,7 +486,7 @@ function renderPicker(){
   var titles = {today: 'Choose today\'s few', more: 'Bring up a few more', tomorrow: 'Plan tomorrow'};
   var ids = candidates(true);
   var h = '<div class="sheet"><header><div><h2 id="sheet-title">' + titles[pick.mode] + '</h2>' +
-          '<p class="muted" style="font-size:15px">Up to ' + pick.limit + '. From the top of your reservoir.</p></div>' +
+          '<p class="muted" style="font-size:15px">Up to ' + pick.limit + '.</p></div>' +
           '<button class="iconbtn" data-act="close" aria-label="Close">' + I.close + '</button></header>';
   h += '<div class="chips" role="group" aria-label="Filter by kind">' + [['', 'Anything'], ['quick', 'Quick'], ['deep', 'Deep focus'], ['errand', 'Errand'], ['project', 'Project']].map(function(o){
     return '<button class="chipbtn" data-act="ptag" data-tag="' + o[0] + '" aria-pressed="' + (pick.tag === o[0]) + '">' + o[1] + '</button>';
@@ -494,14 +494,25 @@ function renderPicker(){
   if (!ids.length) {
     h += '<p class="muted">Nothing of that kind is waiting.</p>';
   } else {
+    var onToday = function(id){ return S.today.indexOf(id) >= 0; };
+    var groups = [
+      ['Still on today', ids.filter(onToday)],
+      ['Timely', ids.filter(function(id){ return !onToday(id) && isTimely(id); })],
+      ['Whenever', ids.filter(function(id){ return !onToday(id) && !isTimely(id); })]
+    ];
+    var more = false;
     h += '<div class="cands">';
-    ids.slice(0, pick.shown).forEach(function(id){
-      var t = S.tasks[id];
-      var carry = S.today.indexOf(id) >= 0 ? 'Still on today' : '';
-      h += '<button class="cand" data-act="psel" data-id="' + id + '" aria-pressed="' + !!pick.sel[id] + '"><i></i><span class="txt">' + esc(t.text) + tagLine(t, carry) + '</span></button>';
+    groups.forEach(function(g){
+      if (!g[1].length) return;
+      h += '<h3 class="sechead" style="margin:0">' + g[0] + '</h3>';
+      g[1].slice(0, pick.shown).forEach(function(id){
+        var t = S.tasks[id];
+        h += '<button class="cand" data-act="psel" data-id="' + id + '" aria-pressed="' + !!pick.sel[id] + '"><i></i><span class="txt">' + esc(t.text) + tagLine(t) + '</span></button>';
+      });
+      if (g[1].length > pick.shown) more = true;
     });
     h += '</div>';
-    if (ids.length > pick.shown) h += '<button class="link" data-act="pmore">Show a few more</button>';
+    if (more) h += '<button class="link" data-act="pmore">Show a few more</button>';
   }
   var n = selCount();
   var label = pick.mode === 'tomorrow' ? 'Set tomorrow' : 'Bring these up';
@@ -579,8 +590,8 @@ document.addEventListener('click', function(e){
   else if (act === 'cap') { S.cap = +el.dataset.n; save(); render(); }
   else if (act === 'export') { exportData(); }
   else if (act === 'import') { document.getElementById('importer').click(); }
-  else if (act === 'ptag') { pick.tag = el.dataset.tag; pick.shown = 6; renderPicker(); }
-  else if (act === 'pmore') { pick.shown += 6; renderPicker(); }
+  else if (act === 'ptag') { pick.tag = el.dataset.tag; pick.shown = 5; renderPicker(); }
+  else if (act === 'pmore') { pick.shown += 5; renderPicker(); }
   else if (act === 'psel') {
     if (pick.sel[id]) delete pick.sel[id];
     else if (selCount() < pick.limit) pick.sel[id] = true;
