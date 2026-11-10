@@ -312,7 +312,7 @@ function todayHTML(){
   dinnerShown = isDinnerTime();
   var dinner = S.dinner.filter(function(id){ return S.tasks[id]; });
   if (dinnerShown && dinner.length) {
-    h += '<h2 class="subhead">Dinner time</h2><ul class="today">';
+    h += '<h2 class="subhead">Dinnertime</h2><ul class="today">';
     dinner.forEach(function(id){ h += taskRow(id, false); });
     h += '</ul>';
   }
@@ -366,7 +366,7 @@ function reservoirHTML(){
     S.reservoir.filter(function(id){ return !isTimely(id); }).forEach(function(id){ h += rowHTML(id, true); });
     h += '</ul>';
     if (dinner.length) {
-      h += '<ul class="res"><li class="sechead">Dinner time</li>';
+      h += '<ul class="res"><li class="sechead">Dinnertime</li>';
       dinner.forEach(function(id){ h += rowHTML(id, false); });
       h += '</ul>';
     }
@@ -410,7 +410,7 @@ function openForm(id){
   h += '<label class="f">Notes (optional)<textarea name="notes" rows="4" maxlength="2000" style="min-height:110px">' + (t && t.notes ? esc(t.notes) : '') + '</textarea></label>';
   h += '<fieldset><legend>Kind</legend>' + chipsHTML('tag', TAGS, t ? (t.tag || '') : '') + '</fieldset>';
   var cur = t ? (S.dinner.indexOf(id) >= 0 ? 'dinner' : (t.sec === 'timely' ? 'timely' : 'whenever')) : 'whenever';
-  h += '<fieldset><legend>Where does it belong?</legend>' + chipsHTML('place', [['timely', 'Timely'], ['whenever', 'Whenever'], ['dinner', 'Dinner time']], cur) + '</fieldset>';
+  h += '<fieldset><legend>Where does it belong?</legend>' + chipsHTML('place', [['timely', 'Timely'], ['whenever', 'Whenever'], ['dinner', 'Dinnertime']], cur) + '</fieldset>';
   h += '<label class="f">Not before (optional)<input type="date" name="notBefore" value="' + (t && t.notBefore ? t.notBefore : '') + '"></label>';
   h += '<button class="btn full" type="submit">' + (t ? 'Save' : 'Tuck it away') + '</button>';
   if (t) {
@@ -450,7 +450,7 @@ function submitForm(f){
     if (inDinner) { S.dinner = S.dinner.filter(function(x){ return x !== id; }); S.reservoir.push(id); }
     else if (isNew) S.reservoir.push(id);
   }
-  if (isNew) toast(place === 'dinner' ? 'Saved for dinner time.' : 'Tucked away below the surface.');
+  if (isNew) toast(place === 'dinner' ? 'Saved for dinnertime.' : 'Tucked away below the surface.');
   save(); sheet.close(); render();
 }
 
