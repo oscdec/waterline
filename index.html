@@ -90,7 +90,9 @@ button.txt{align-self:stretch}
 .handle svg{width:20px;height:20px}
 .rowmain{flex:1;min-width:0;text-align:left;padding:10px 14px 10px 0;overflow-wrap:anywhere}
 .row.asleep .rowmain{color:var(--muted)}
-.ends{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);padding:0 4px}
+.sechead{font-size:14px;font-weight:600;color:var(--muted);padding:14px 4px 2px}
+.row.nohandle .rowmain{padding-left:16px}
+.subhead{margin:26px 0 10px;font-size:20px}
 .ask{background:var(--soft);border-radius:18px;padding:18px;margin-bottom:16px;display:flex;flex-direction:column;gap:12px}
 .ask .pair{display:flex;gap:10px}
 
@@ -172,7 +174,7 @@ function esc(s){
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
 function fresh(){
-  return {v: 1, cap: 3, day: dayKey(), tasks: {}, today: [], done: [], reservoir: [], tomorrow: [], tomorrowFor: null};
+  return {v: 1, cap: 3, day: dayKey(), tasks: {}, today: [], done: [], reservoir: [], dinner: [], tomorrow: [], tomorrowFor: null};
 }
 function valid(r){
   return r && r.v === 1 && r.tasks && Array.isArray(r.today) && Array.isArray(r.done) && Array.isArray(r.reservoir);
@@ -180,11 +182,17 @@ function valid(r){
 function load(){
   try {
     var r = JSON.parse(localStorage.getItem(KEY));
-    if (valid(r)) { if (!Array.isArray(r.tomorrow)) r.tomorrow = []; return r; }
+    if (valid(r)) { if (!Array.isArray(r.tomorrow)) r.tomorrow = []; if (!Array.isArray(r.dinner)) r.dinner = []; return r; }
   } catch (e) {}
   return fresh();
 }
-function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+function isTimely(id){ return S.tasks[id] && S.tasks[id].sec === 'timely'; }
+function norm(){
+  S.reservoir = S.reservoir.filter(isTimely).concat(S.reservoir.filter(function(id){ return !isTimely(id); }));
+}
+function save(){ norm(); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+function isDinnerTime(){ var h = new Date().getHours(); return h >= 17 || h < DAY_STARTS_AT; }
+var dinnerShown = false;
 
 var S = load();
 var view = 'today';
@@ -229,6 +237,7 @@ function rollover(){
   if (S.day === k) return;
   var unfinished = S.today.filter(function(id){ return S.done.indexOf(id) < 0 && S.tasks[id]; });
   S.done.forEach(function(id){ delete S.tasks[id]; });
+  S.dinner = S.dinner.filter(function(id){ return S.tasks[id]; });
   S.reservoir = unfinished.concat(S.reservoir);
   S.today = [];
   S.done = [];
@@ -257,6 +266,16 @@ function tagLine(t, extra){
   return bits.length ? '<span class="tag">' + esc(bits.join(' · ')) + '</span>' : '';
 }
 
+function taskRow(id, sendback){
+  var t = S.tasks[id]; if (!t) return '';
+  var done = S.done.indexOf(id) >= 0;
+  return '<li class="task' + (done ? ' done' : '') + '">' +
+    '<button class="check" data-act="toggle" data-id="' + id + '" aria-pressed="' + done + '" aria-label="' + (done ? 'Mark not done: ' : 'Mark done: ') + esc(t.text) + '"><i>' + I.check + '</i></button>' +
+    '<button class="txt" data-act="edit" data-id="' + id + '">' + esc(t.text) + tagLine(t) + '</button>' +
+    (done || !sendback ? '' : '<button class="iconbtn" data-act="sendback" data-id="' + id + '" aria-label="Send back below the surface: ' + esc(t.text) + '">' + I.down + '</button>') +
+    '</li>';
+}
+
 function todayHTML(){
   var undone = undoneToday();
   var empty = S.today.length === 0;
@@ -271,15 +290,7 @@ function todayHTML(){
 
   if (!empty) {
     h += '<ul class="today">';
-    S.today.forEach(function(id){
-      var t = S.tasks[id]; if (!t) return;
-      var done = S.done.indexOf(id) >= 0;
-      h += '<li class="task' + (done ? ' done' : '') + '">' +
-           '<button class="check" data-act="toggle" data-id="' + id + '" aria-pressed="' + done + '" aria-label="' + (done ? 'Mark not done: ' : 'Mark done: ') + esc(t.text) + '"><i>' + I.check + '</i></button>' +
-           '<button class="txt" data-act="edit" data-id="' + id + '">' + esc(t.text) + tagLine(t) + '</button>' +
-           (done ? '' : '<button class="iconbtn" data-act="sendback" data-id="' + id + '" aria-label="Send back below the surface: ' + esc(t.text) + '">' + I.down + '</button>') +
-           '</li>';
-    });
+    S.today.forEach(function(id){ h += taskRow(id, true); });
     h += '</ul>';
   }
 
@@ -298,6 +309,13 @@ function todayHTML(){
     h += '<button class="link" data-act="pick" data-mode="more">There\'s room for one more</button>';
   }
 
+  dinnerShown = isDinnerTime();
+  var dinner = S.dinner.filter(function(id){ return S.tasks[id]; });
+  if (dinnerShown && dinner.length) {
+    h += '<h2 class="subhead">Dinner time</h2><ul class="today">';
+    dinner.forEach(function(id){ h += taskRow(id, false); });
+    h += '</ul>';
+  }
   h += '<div class="waterline" role="separator"></div><div class="below"><div class="acts">';
   var planned = plannedTomorrow();
   if (planned.length) {
@@ -324,24 +342,34 @@ function staleId(){
 function reservoirHTML(){
   var h = '<div class="top"><button class="iconbtn" data-act="home" aria-label="Back to today">' + I.back + '</button>' +
           '<div class="brand"><span>Below The Surface</span></div><span style="width:44px"></span></div>';
-  h += '<p class="muted" style="margin:16px 0 20px">One list, in order: the top is most important, the bottom is whenever. Drag the handle to reorder. Swipe right to let one go.</p>';
+  h += '<p class="muted" style="margin:16px 0 20px">Drag the handle to reorder, or to move between Timely and Whenever. Swipe right to let one go.</p>';
   var s = staleId();
   if (s) {
     h += '<div class="ask"><p class="muted" style="font-size:14px">This has been resting a while. Still want it?</p><p>' + esc(S.tasks[s].text) + '</p>' +
          '<div class="pair"><button class="btn quiet" data-act="keep" data-id="' + s + '">Keep it</button><button class="btn quiet" data-act="letgo" data-id="' + s + '">Let it go</button></div></div>';
   }
-  if (!S.reservoir.length) {
+  function rowHTML(id, handle){
+    var t = S.tasks[id]; if (!t) return '';
+    var asleep = t.notBefore && t.notBefore > S.day;
+    return '<li class="row' + (asleep ? ' asleep' : '') + (handle ? '' : ' nohandle') + '" data-id="' + id + '">' +
+      (handle ? '<button class="handle" data-id="' + id + '" aria-label="Reorder: ' + esc(t.text) + '. Use the up and down arrow keys.">' + I.grip + '</button>' : '') +
+      '<button class="rowmain" data-act="edit" data-id="' + id + '">' + esc(t.text) + tagLine(t, asleep ? 'Resting until ' + shortDate(t.notBefore) : '') + '</button></li>';
+  }
+  var dinner = S.dinner.filter(function(id){ return S.tasks[id]; });
+  if (!S.reservoir.length && !dinner.length) {
     h += '<div class="state"><h2>Still water</h2><p class="muted">Nothing is waiting down here.</p></div>';
   } else {
     h += '<ul class="res" id="res">';
-    S.reservoir.forEach(function(id){
-      var t = S.tasks[id]; if (!t) return;
-      var asleep = t.notBefore && t.notBefore > S.day;
-      h += '<li class="row' + (asleep ? ' asleep' : '') + '" data-id="' + id + '">' +
-           '<button class="handle" data-id="' + id + '" aria-label="Reorder: ' + esc(t.text) + '. Use the up and down arrow keys.">' + I.grip + '</button>' +
-           '<button class="rowmain" data-act="edit" data-id="' + id + '">' + esc(t.text) + tagLine(t, asleep ? 'Resting until ' + shortDate(t.notBefore) : '') + '</button></li>';
-    });
+    h += '<li class="sechead" data-sec="timely">Timely</li>';
+    S.reservoir.filter(isTimely).forEach(function(id){ h += rowHTML(id, true); });
+    h += '<li class="sechead" data-sec="whenever">Whenever</li>';
+    S.reservoir.filter(function(id){ return !isTimely(id); }).forEach(function(id){ h += rowHTML(id, true); });
     h += '</ul>';
+    if (dinner.length) {
+      h += '<ul class="res"><li class="sechead">Dinner time</li>';
+      dinner.forEach(function(id){ h += rowHTML(id, false); });
+      h += '</ul>';
+    }
   }
   h += '<button class="fab" data-act="capture" aria-label="Add a task">' + I.plus + '</button>';
   return h;
@@ -381,7 +409,8 @@ function openForm(id){
   h += '<p class="danger" id="formerr" role="alert" style="font-size:14px;display:none">Write a few words first.</p>';
   h += '<label class="f">Notes (optional)<textarea name="notes" rows="4" maxlength="2000" style="min-height:110px">' + (t && t.notes ? esc(t.notes) : '') + '</textarea></label>';
   h += '<fieldset><legend>Kind</legend>' + chipsHTML('tag', TAGS, t ? (t.tag || '') : '') + '</fieldset>';
-  if (!t) h += '<fieldset><legend>Where does it go?</legend>' + chipsHTML('place', [['bottom', 'Whenever'], ['top', 'Timely, near the top']], 'bottom') + '</fieldset>';
+  var cur = t ? (S.dinner.indexOf(id) >= 0 ? 'dinner' : (t.sec === 'timely' ? 'timely' : 'whenever')) : 'whenever';
+  h += '<fieldset><legend>Where does it belong?</legend>' + chipsHTML('place', [['timely', 'Timely'], ['whenever', 'Whenever'], ['dinner', 'Dinner time']], cur) + '</fieldset>';
   h += '<label class="f">Not before (optional)<input type="date" name="notBefore" value="' + (t && t.notBefore ? t.notBefore : '') + '"></label>';
   h += '<button class="btn full" type="submit">' + (t ? 'Save' : 'Tuck it away') + '</button>';
   if (t) {
@@ -401,22 +430,33 @@ function submitForm(f){
   var tag = (f.querySelector('input[name=tag]:checked') || {}).value || '';
   var nb = f.notBefore.value || '';
   var notes = f.notes.value.trim();
-  if (form.id && S.tasks[form.id]) {
-    var t = S.tasks[form.id];
-    t.text = text; t.tag = tag; t.notBefore = nb; t.notes = notes; t.touched = Date.now();
-  } else {
-    var id = uid();
-    S.tasks[id] = {id: id, text: text, tag: tag, notBefore: nb, notes: notes, created: Date.now(), touched: Date.now()};
-    var place = (f.querySelector('input[name=place]:checked') || {}).value;
-    if (place === 'top') S.reservoir.unshift(id); else S.reservoir.push(id);
-    toast('Tucked away below the surface.');
+  var place = (f.querySelector('input[name=place]:checked') || {}).value || 'whenever';
+  var id = form.id && S.tasks[form.id] ? form.id : null;
+  var isNew = !id;
+  if (isNew) {
+    id = uid();
+    S.tasks[id] = {id: id, text: text, created: Date.now()};
   }
+  var t = S.tasks[id];
+  t.text = text; t.tag = tag; t.notBefore = nb; t.notes = notes; t.touched = Date.now();
+  var inDinner = S.dinner.indexOf(id) >= 0;
+  if (place === 'dinner') {
+    if (!inDinner) {
+      ['today', 'reservoir', 'tomorrow'].forEach(function(k){ S[k] = S[k].filter(function(x){ return x !== id; }); });
+      S.dinner.push(id);
+    }
+  } else {
+    t.sec = place;
+    if (inDinner) { S.dinner = S.dinner.filter(function(x){ return x !== id; }); S.reservoir.push(id); }
+    else if (isNew) S.reservoir.push(id);
+  }
+  if (isNew) toast(place === 'dinner' ? 'Saved for dinner time.' : 'Tucked away below the surface.');
   save(); sheet.close(); render();
 }
 
 function removeTask(id){
   delete S.tasks[id];
-  ['today', 'done', 'reservoir', 'tomorrow'].forEach(function(k){
+  ['today', 'done', 'reservoir', 'dinner', 'tomorrow'].forEach(function(k){
     S[k] = S[k].filter(function(x){ return x !== id; });
   });
 }
@@ -498,6 +538,7 @@ document.getElementById('importer').addEventListener('change', function(e){
       var data = JSON.parse(r.result);
       if (!valid(data)) throw new Error('bad');
       if (!Array.isArray(data.tomorrow)) data.tomorrow = [];
+      if (!Array.isArray(data.dinner)) data.dinner = [];
       if (!confirm('Replace everything on this device with this backup?')) return;
       S = data; save(); view = 'today'; render(); toast('Backup restored.');
     } catch (err) { toast('That file is not a Waterline backup.'); }
@@ -617,7 +658,7 @@ document.addEventListener('pointermove', function(e){
     r = next.getBoundingClientRect();
     if (e.clientY > r.top + r.height / 2) list.insertBefore(next, row);
   }
-  if (prev && row.offsetTop === before) {
+  if (prev && prev !== list.firstElementChild && row.offsetTop === before) {
     r = prev.getBoundingClientRect();
     if (e.clientY < r.top + r.height / 2) list.insertBefore(prev, row.nextSibling);
   }
@@ -628,10 +669,19 @@ function endDrag(e){
   if (!drag || (e && e.pointerId !== drag.pid)) return;
   var row = drag.row;
   row.style.transform = ''; row.classList.remove('drag');
-  var ids = [].map.call(row.parentNode.children, function(li){ return li.dataset.id; });
-  var moved = ids.join() !== S.reservoir.join();
   drag = null;
-  if (moved) { S.reservoir = ids; S.tasks[row.dataset.id].touched = Date.now(); save(); }
+  commitOrder(row.parentNode, row.dataset.id);
+}
+function commitOrder(list, movedId){
+  var sec = 'timely', ids = [];
+  [].forEach.call(list.children, function(li){
+    if (li.classList.contains('sechead')) { sec = li.dataset.sec; return; }
+    var t = S.tasks[li.dataset.id]; if (!t) return;
+    t.sec = sec; ids.push(li.dataset.id);
+  });
+  S.reservoir = ids;
+  if (S.tasks[movedId]) S.tasks[movedId].touched = Date.now();
+  save(); render();
 }
 document.addEventListener('pointerup', endDrag);
 document.addEventListener('pointercancel', endDrag);
@@ -639,17 +689,24 @@ document.addEventListener('keydown', function(e){
   var handle = e.target.closest && e.target.closest('.handle'); if (!handle) return;
   if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
   e.preventDefault();
-  var id = handle.dataset.id, i = S.reservoir.indexOf(id), j = i + (e.key === 'ArrowUp' ? -1 : 1);
-  if (j < 0 || j >= S.reservoir.length) return;
-  S.reservoir.splice(i, 1); S.reservoir.splice(j, 0, id);
-  save(); render();
+  var id = handle.dataset.id, row = handle.closest('.row'), list = row.parentNode;
+  if (e.key === 'ArrowUp') {
+    var pv = row.previousElementSibling;
+    if (!pv || pv === list.firstElementChild) return;
+    list.insertBefore(row, pv);
+  } else {
+    var nx = row.nextElementSibling;
+    if (!nx) return;
+    list.insertBefore(nx, row);
+  }
+  commitOrder(list, id);
   var h = app.querySelector('.handle[data-id="' + id + '"]'); if (h) h.focus();
 });
 
 document.addEventListener('visibilitychange', function(){
   if (!document.hidden && !sheet.open) render();
 });
-setInterval(function(){ if (S.day !== dayKey() && !sheet.open) render(); }, 60000);
+setInterval(function(){ if ((S.day !== dayKey() || (view === 'today' && dinnerShown !== isDinnerTime())) && !sheet.open) render(); }, 30000);
 
 render();
 
