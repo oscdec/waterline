@@ -70,14 +70,15 @@ button.txt{align-self:stretch}
 .btn.full{width:100%;justify-content:center}
 .link{min-height:44px;color:var(--muted);text-decoration:underline;text-underline-offset:3px;text-align:left}
 
-.waterline{height:4px;border-radius:2px;background:var(--ink);margin:28px 0 22px}
+.waterline{height:4px;border-radius:2px;background:var(--ink);margin:24px 0}
 .below{display:flex;gap:16px;align-items:flex-start;justify-content:space-between}
-.acts{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+.acts{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
 .dots{flex:none;display:flex;flex-direction:column;gap:12px;margin:8px 4px 0 0}
 .dots span{display:flex;gap:14px}
 .dots b{width:12px;height:12px;border-radius:50%;background:var(--ink)}
 .dots span:nth-child(1) b{opacity:.28}
 .dots span:nth-child(2) b{opacity:.14;transform:scale(.8)}
+.dots span:nth-child(3) b{opacity:.08;transform:scale(.62)}
 .note{background:var(--soft);border-radius:18px;padding:16px 18px;width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px}
 
 .fab{position:fixed;right:max(20px, calc(50% - 220px));bottom:calc(env(safe-area-inset-bottom) + 24px);width:60px;height:60px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;box-shadow:0 4px 14px rgba(0,0,0,.18)}
@@ -141,8 +142,8 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 var KEY = 'waterline.v1';
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
-var TAGS = [['', 'No tag'], ['quick', 'Quick'], ['deep', 'Deep focus'], ['errand', 'Errand']];
-var TAG_LABEL = {quick: 'Quick', deep: 'Deep focus', errand: 'Errand'};
+var TAGS = [['', 'No tag'], ['quick', 'Quick'], ['deep', 'Deep focus'], ['errand', 'Errand'], ['project', 'Project']];
+var TAG_LABEL = {quick: 'Quick', deep: 'Deep focus', errand: 'Errand', project: 'Project'};
 
 var I = {
   logo: '<svg viewBox="0 0 240 240" aria-hidden="true"><rect width="240" height="240" fill="#DCE8E3"/><g fill="#1F3A3A"><circle cx="84" cy="92" r="13"/><circle cx="120" cy="92" r="13"/><circle cx="156" cy="92" r="13"/><rect x="49" y="123" width="142" height="6" rx="3"/><g opacity=".28"><circle cx="84" cy="158" r="10"/><circle cx="120" cy="158" r="10"/><circle cx="156" cy="158" r="10"/></g><g opacity=".14"><circle cx="84" cy="188" r="8"/><circle cx="120" cy="188" r="8"/><circle cx="156" cy="188" r="8"/></g></g></svg>',
@@ -325,7 +326,7 @@ function todayHTML(){
     h += '<button class="btn ' + (evening ? '' : 'quiet') + '" data-act="pick" data-mode="tomorrow">Plan tomorrow</button>';
   }
   h += '<button class="btn quiet" data-act="reservoir">Below The Surface</button>';
-  h += '</div><div class="dots" aria-hidden="true"><span><b></b><b></b><b></b></span><span><b></b><b></b><b></b></span></div></div>';
+  h += '</div><div class="dots" aria-hidden="true"><span><b></b><b></b><b></b></span><span><b></b><b></b><b></b></span><span><b></b><b></b><b></b></span></div></div>';
   h += '<button class="fab" data-act="capture" aria-label="Add a task">' + I.plus + '</button>';
   return h;
 }
@@ -487,7 +488,7 @@ function renderPicker(){
   var h = '<div class="sheet"><header><div><h2 id="sheet-title">' + titles[pick.mode] + '</h2>' +
           '<p class="muted" style="font-size:15px">Up to ' + pick.limit + '. From the top of your reservoir.</p></div>' +
           '<button class="iconbtn" data-act="close" aria-label="Close">' + I.close + '</button></header>';
-  h += '<div class="chips" role="group" aria-label="Filter by kind">' + [['', 'Anything'], ['quick', 'Quick'], ['deep', 'Deep focus'], ['errand', 'Errand']].map(function(o){
+  h += '<div class="chips" role="group" aria-label="Filter by kind">' + [['', 'Anything'], ['quick', 'Quick'], ['deep', 'Deep focus'], ['errand', 'Errand'], ['project', 'Project']].map(function(o){
     return '<button class="chipbtn" data-act="ptag" data-tag="' + o[0] + '" aria-pressed="' + (pick.tag === o[0]) + '">' + o[1] + '</button>';
   }).join('') + '</div>';
   if (!ids.length) {
