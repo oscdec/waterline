@@ -63,7 +63,7 @@ button.txt{align-self:stretch}
 .task .handle{width:28px;align-self:stretch;border-radius:10px}
 .task.drag{position:relative;z-index:5;box-shadow:0 8px 22px rgba(0,0,0,.2)}
 .iconbtn[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
-.task.dinner{background:var(--dinner);padding-left:34px}
+.task.dinner{background:var(--dinner)}
 .task.done .txt{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1px}
 .tag{display:inline-block;width:100%;font-size:13px;color:var(--muted);text-decoration:none}
 
@@ -152,7 +152,7 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 'use strict';
 
 var KEY = 'waterline.v1';
-var VERSION = 16;
+var VERSION = 17;
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
 var TAGS = [['oneday', 'One day'], ['project', 'Project']];
@@ -324,15 +324,22 @@ function todayHTML(){
   h += '<p class="date">' + esc(niceDate(S.day)) + '</p><h1>Today</h1>';
 
   dinnerShown = isDinnerTime();
-  var dinner = dinnerShown ? S.dinner.filter(function(id){ return S.tasks[id]; }) : [];
-  if (!empty || dinner.length) {
-    h += '<ul class="today" data-list="today"' + (empty ? ' style="margin-bottom:14px"' : '') + '>';
+  var dinner = dinnerShown ? S.dinner.filter(function(id){ return S.tasks[id] && S.tasks[id].awayDay !== S.day; }) : [];
+  if (dinner.length) {
+    h += '<ul class="today" data-list="dinner" style="margin-bottom:' + (empty ? 14 : 10) + 'px">';
     dinner.forEach(function(id){
-      var t = S.tasks[id];
-      h += '<li class="task dinner stop" data-id="' + id + '">' +
-           '<button class="check" data-act="dinnerdone" data-id="' + id + '" aria-label="Mark done: ' + esc(t.text) + '"><i>' + I.check + '</i></button>' +
-           '<button class="txt" data-act="edit" data-id="' + id + '">' + esc(t.text) + tagLine(t, 'Dinnertime') + '</button></li>';
+      var t = S.tasks[id], done = S.done.indexOf(id) >= 0;
+      h += '<li class="task dinner' + (done ? ' done' : '') + '" data-id="' + id + '">' +
+           '<button class="handle" data-id="' + id + '" aria-label="Reorder: ' + esc(t.text) + '. Use the up and down arrow keys.">' + I.grip + '</button>' +
+           '<button class="check" data-act="toggle" data-id="' + id + '" aria-pressed="' + done + '" aria-label="' + (done ? 'Mark not done: ' : 'Mark done: ') + esc(t.text) + '"><i>' + I.check + '</i></button>' +
+           '<button class="txt" data-act="edit" data-id="' + id + '">' + esc(t.text) + tagLine(t, 'Dinnertime') + '</button>' +
+           (done ? '' : '<button class="iconbtn" data-act="dinneraway" data-id="' + id + '" aria-label="Send away until tomorrow: ' + esc(t.text) + '">' + I.down + '</button>') +
+           '</li>';
     });
+    h += '</ul>';
+  }
+  if (!empty) {
+    h += '<ul class="today" data-list="today">';
     S.today.forEach(function(id){ h += taskRow(id, true); });
     h += '</ul>';
   }
@@ -449,8 +456,17 @@ function settingsHTML(){
   return h;
 }
 
+function sweepDinner(){
+  var h = new Date().getHours();
+  if (!(h >= 21 || h < DAY_STARTS_AT)) return;
+  var gone = S.dinner.filter(function(id){ return S.tasks[id] && S.done.indexOf(id) >= 0; });
+  if (!gone.length) return;
+  gone.forEach(function(id){ S.log.push({day: S.day, text: S.tasks[id].text}); removeTask(id); });
+  save();
+}
 function render(){
   rollover();
+  sweepDinner();
   app.innerHTML = view === 'week' ? weekHTML() : view === 'reservoir' ? reservoirHTML() : view === 'settings' ? settingsHTML() : todayHTML();
 }
 
@@ -635,10 +651,10 @@ document.addEventListener('click', function(e){
     S.today = S.today.filter(function(x){ return x !== id; });
     S.reservoir.unshift(id);
     save(); render(); toast('Back below the surface.');
-  } else if (act === 'dinnerdone') {
-    var snap = JSON.stringify(S);
-    removeTask(id); save(); render();
-    toast('Done.', function(){ S = JSON.parse(snap); save(); render(); });
+  } else if (act === 'dinneraway') {
+    S.tasks[id].awayDay = S.day;
+    save(); render();
+    toast('Away until tomorrow.', function(){ if (S.tasks[id]) { S.tasks[id].awayDay = ''; save(); render(); } });
   } else if (act === 'repeat') {
     S.tasks[id].keep = !S.tasks[id].keep;
     save(); render();
@@ -761,7 +777,8 @@ function endDrag(e){
 function commitMove(list, id){
   if (list.id === 'res') commitOrder(list, id);
   else if (list.dataset.list) {
-    S[list.dataset.list] = [].map.call(list.children, function(li){ return li.dataset.id; }).filter(function(x){ return S.dinner.indexOf(x) < 0; });
+    var key = list.dataset.list, shown = [].map.call(list.children, function(li){ return li.dataset.id; });
+    S[key] = shown.concat(S[key].filter(function(x){ return shown.indexOf(x) < 0; }));
     save(); render();
   }
   else commitPick(list, id);
