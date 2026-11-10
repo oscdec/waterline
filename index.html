@@ -113,10 +113,12 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 .chip input:checked + span,.chipbtn[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .chip input:focus-visible + span{outline:3px solid var(--accent);outline-offset:2px}
 .cands{display:flex;flex-direction:column;gap:8px}
-.cand{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--surface);border:1.5px solid transparent;border-radius:16px;padding:10px 14px;min-height:56px}
+.cand{border:1.5px solid transparent}
+.candmain{flex:1;min-width:0;display:flex;align-items:center;gap:12px;text-align:left;padding:10px 14px 10px 0;border-radius:0 16px 16px 0}
+.cand.fixed .candmain{padding-left:14px;border-radius:16px}
 .cand i{flex:none;width:24px;height:24px;border-radius:50%;border:2px solid var(--muted)}
-.cand[aria-pressed=true]{border-color:var(--ink)}
-.cand[aria-pressed=true] i{background:var(--ink);border-color:var(--ink)}
+.cand.sel{border-color:var(--ink)}
+.cand.sel i{background:var(--ink);border-color:var(--ink)}
 .seg{display:flex;gap:8px}
 .danger{color:#A33A2B}
 @media (prefers-color-scheme: dark){.danger{color:#F0A99C}}
@@ -140,7 +142,7 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 'use strict';
 
 var KEY = 'waterline.v1';
-var VERSION = 10;
+var VERSION = 11;
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
 var TAGS = [['', 'No tag'], ['quick', 'Quick'], ['deep', 'Deep focus'], ['errand', 'Errand'], ['project', 'Project']];
@@ -188,7 +190,7 @@ function load(){
   } catch (e) {}
   return fresh();
 }
-var SECS = [['timely', 'Timely'], ['whenever', 'Casual'], ['longterm', 'Long term']];
+var SECS = [['timely', 'Timely'], ['whenever', 'No rush'], ['longterm', 'Long term']];
 function secOf(id){
   var v = S.tasks[id] ? S.tasks[id].sec : '';
   return v === 'timely' || v === 'longterm' ? v : 'whenever';
@@ -369,7 +371,7 @@ function reservoirHTML(){
   } else {
     h += '<ul class="res" id="res">';
     SECS.forEach(function(sc){
-      h += '<li class="sechead" data-sec="' + sc[0] + '">' + sc[1] + '</li>';
+      h += '<li class="sechead' + (sc[0] === 'timely' ? ' fixed' : '') + '" data-sec="' + sc[0] + '">' + sc[1] + '</li>';
       inSec(S.reservoir, sc[0]).forEach(function(id){ h += rowHTML(id, true); });
     });
     h += '</ul>';
@@ -494,7 +496,7 @@ function renderPicker(){
   var titles = {today: 'Choose today\'s few', more: 'Bring up a few more', tomorrow: 'Plan tomorrow'};
   var ids = candidates(true);
   var h = '<div class="sheet"><header><div><h2 id="sheet-title">' + titles[pick.mode] + '</h2>' +
-          '<p class="muted" style="font-size:15px">Up to ' + pick.limit + '.</p></div>' +
+          '<p class="muted" style="font-size:15px">Up to ' + pick.limit + '. Drag a handle to reorder or change section.</p></div>' +
           '<button class="iconbtn" data-act="close" aria-label="Close">' + I.close + '</button></header>';
   h += '<div class="chips" role="group" aria-label="Filter by kind">' + [['', 'Anything'], ['quick', 'Quick'], ['deep', 'Deep focus'], ['errand', 'Errand'], ['project', 'Project']].map(function(o){
     return '<button class="chipbtn" data-act="ptag" data-tag="' + o[0] + '" aria-pressed="' + (pick.tag === o[0]) + '">' + o[1] + '</button>';
@@ -503,21 +505,24 @@ function renderPicker(){
     h += '<p class="muted">Nothing of that kind is waiting.</p>';
   } else {
     var onToday = function(id){ return S.today.indexOf(id) >= 0; };
-    var groups = [
-      ['Still on today', ids.filter(onToday)]
-    ].concat(SECS.map(function(sc){
-      return [sc[1], ids.filter(function(id){ return !onToday(id) && secOf(id) === sc[0]; })];
-    }));
     var more = false;
-    h += '<div class="cands">';
-    groups.forEach(function(g){
-      if (!g[1].length) return;
-      h += '<h3 class="sechead" style="margin:0">' + g[0] + '</h3>';
-      g[1].slice(0, pick.shown).forEach(function(id){
-        var t = S.tasks[id];
-        h += '<button class="cand" data-act="psel" data-id="' + id + '" aria-pressed="' + !!pick.sel[id] + '"><i></i><span class="txt">' + esc(t.text) + tagLine(t) + '</span></button>';
-      });
-      if (g[1].length > pick.shown) more = true;
+    var candHTML = function(id, movable){
+      var t = S.tasks[id], on = !!pick.sel[id];
+      return '<div class="cand row' + (on ? ' sel' : '') + (movable ? '' : ' fixed') + '" data-id="' + id + '">' +
+        (movable ? '<button class="handle" data-id="' + id + '" aria-label="Reorder: ' + esc(t.text) + '. Use the up and down arrow keys.">' + I.grip + '</button>' : '') +
+        '<button class="candmain" data-act="psel" data-id="' + id + '" aria-pressed="' + on + '"><i></i><span class="txt">' + esc(t.text) + tagLine(t) + '</span></button></div>';
+    };
+    h += '<div class="cands" id="cands">';
+    var carried = ids.filter(onToday);
+    if (carried.length) {
+      h += '<h3 class="sechead fixed" style="margin:0">Still on today</h3>';
+      carried.forEach(function(id){ h += candHTML(id, false); });
+    }
+    SECS.forEach(function(sc){
+      var list = ids.filter(function(id){ return !onToday(id) && secOf(id) === sc[0]; });
+      h += '<h3 class="sechead' + (sc[0] === 'timely' ? ' fixed' : '') + '" style="margin:0" data-sec="' + sc[0] + '">' + sc[1] + '</h3>';
+      list.slice(0, pick.shown).forEach(function(id){ h += candHTML(id, true); });
+      if (list.length > pick.shown) more = true;
     });
     h += '</div>';
     if (more) h += '<button class="link" data-act="pmore">Show a few more</button>';
@@ -605,7 +610,7 @@ document.addEventListener('click', function(e){
     else if (selCount() < pick.limit) pick.sel[id] = true;
     else { toast('That is plenty for one day.'); return; }
     renderPicker();
-    var b = sheet.querySelector('.cand[data-id="' + id + '"]'); if (b) b.focus();
+    var b = sheet.querySelector('.candmain[data-id="' + id + '"]'); if (b) b.focus();
   }
   else if (act === 'pconfirm') { confirmPick(); }
   else if (act === 'install') {
@@ -624,6 +629,7 @@ sheet.addEventListener('input', function(e){
   if (e.target.name === 'text') { var er = document.getElementById('formerr'); if (er) er.style.display = 'none'; }
 });
 sheet.addEventListener('click', function(e){ if (e.target === sheet) sheet.close(); });
+sheet.addEventListener('close', function(){ sheet.innerHTML = ''; });
 
 var swipe = null, swallowClick = false;
 function swipeReset(row){
@@ -678,7 +684,7 @@ document.addEventListener('pointermove', function(e){
     r = next.getBoundingClientRect();
     if (e.clientY > r.top + r.height / 2) list.insertBefore(next, row);
   }
-  if (prev && prev !== list.firstElementChild && row.offsetTop === before) {
+  if (prev && !prev.classList.contains('fixed') && row.offsetTop === before) {
     r = prev.getBoundingClientRect();
     if (e.clientY < r.top + r.height / 2) list.insertBefore(prev, row.nextSibling);
   }
@@ -690,7 +696,27 @@ function endDrag(e){
   var row = drag.row;
   row.style.transform = ''; row.classList.remove('drag');
   drag = null;
-  commitOrder(row.parentNode, row.dataset.id);
+  commitMove(row.parentNode, row.dataset.id);
+}
+function commitMove(list, id){
+  if (list.id === 'res') commitOrder(list, id); else commitPick(list, id);
+}
+function commitPick(list, id){
+  var sec = 'timely', mySec = null, prevId = null, nextId = null, seen = false;
+  [].forEach.call(list.children, function(el){
+    if (el.classList.contains('sechead')) { if (el.dataset.sec) sec = el.dataset.sec; return; }
+    if (el.classList.contains('fixed')) return;
+    if (el.dataset.id === id) { seen = true; mySec = sec; return; }
+    if (!seen) { if (sec === (mySec || sec)) prevId = el.dataset.id; }
+    else if (!nextId && sec === mySec) nextId = el.dataset.id;
+  });
+  if (!mySec || !S.tasks[id]) { renderPicker(); return; }
+  if (prevId && secOf(prevId) !== mySec) prevId = null;
+  S.tasks[id].sec = mySec; S.tasks[id].touched = Date.now();
+  S.reservoir = S.reservoir.filter(function(x){ return x !== id; });
+  var at = prevId ? S.reservoir.indexOf(prevId) + 1 : nextId ? S.reservoir.indexOf(nextId) : 0;
+  S.reservoir.splice(Math.max(0, at), 0, id);
+  save(); renderPicker();
 }
 function commitOrder(list, movedId){
   var sec = 'timely', ids = [];
@@ -712,15 +738,15 @@ document.addEventListener('keydown', function(e){
   var id = handle.dataset.id, row = handle.closest('.row'), list = row.parentNode;
   if (e.key === 'ArrowUp') {
     var pv = row.previousElementSibling;
-    if (!pv || pv === list.firstElementChild) return;
+    if (!pv || pv.classList.contains('fixed')) return;
     list.insertBefore(row, pv);
   } else {
     var nx = row.nextElementSibling;
     if (!nx) return;
     list.insertBefore(nx, row);
   }
-  commitOrder(list, id);
-  var h = app.querySelector('.handle[data-id="' + id + '"]'); if (h) h.focus();
+  commitMove(list, id);
+  var h = document.querySelector('.handle[data-id="' + id + '"]'); if (h) h.focus();
 });
 
 document.addEventListener('visibilitychange', function(){
