@@ -17,12 +17,12 @@
 <style>
 :root{
   --bg:#F4F7F5; --surface:#FFFFFF; --ink:#1F3A3A; --muted:#4A6360;
-  --soft:#DCE8E3; --accent:#356358; --accent-ink:#FFFFFF; --hair:#C9DAD3;
+  --soft:#DCE8E3; --dinner:#F6E7C4; --accent:#356358; --accent-ink:#FFFFFF; --hair:#C9DAD3;
 }
 @media (prefers-color-scheme: dark){
   :root{
     --bg:#132322; --surface:#1B302E; --ink:#E6EFEB; --muted:#A9C0B8;
-    --soft:#274240; --accent:#A8C9BD; --accent-ink:#132322; --hair:#2F4B48;
+    --soft:#274240; --dinner:#4A4226; --accent:#A8C9BD; --accent-ink:#132322; --hair:#2F4B48;
   }
 }
 *{box-sizing:border-box}
@@ -63,6 +63,7 @@ button.txt{align-self:stretch}
 .task .handle{width:28px;align-self:stretch;border-radius:10px}
 .task.drag{position:relative;z-index:5;box-shadow:0 8px 22px rgba(0,0,0,.2)}
 .iconbtn[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+.task.dinner{background:var(--dinner);padding-left:34px}
 .task.done .txt{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1px}
 .tag{display:inline-block;width:100%;font-size:13px;color:var(--muted);text-decoration:none}
 
@@ -151,7 +152,7 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 'use strict';
 
 var KEY = 'waterline.v1';
-var VERSION = 15;
+var VERSION = 16;
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
 var TAGS = [['oneday', 'One day'], ['project', 'Project']];
@@ -216,7 +217,7 @@ function norm(){
   S.reservoir = inSec(r, 'timely').concat(inSec(r, 'whenever'), inSec(r, 'longterm'));
 }
 function save(){ norm(); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
-function isDinnerTime(){ var h = new Date().getHours(); return h >= 17 || h < DAY_STARTS_AT; }
+function isDinnerTime(){ var h = new Date().getHours(); return h >= 17 && h < 21; }
 var dinnerShown = false;
 
 var S = load();
@@ -322,8 +323,16 @@ function todayHTML(){
   if (!isInstalled()) h += '<button class="btn full" style="margin-top:14px" data-act="install">' + I.down + 'Install Waterline on this phone</button>';
   h += '<p class="date">' + esc(niceDate(S.day)) + '</p><h1>Today</h1>';
 
-  if (!empty) {
-    h += '<ul class="today" data-list="today">';
+  dinnerShown = isDinnerTime();
+  var dinner = dinnerShown ? S.dinner.filter(function(id){ return S.tasks[id]; }) : [];
+  if (!empty || dinner.length) {
+    h += '<ul class="today" data-list="today"' + (empty ? ' style="margin-bottom:14px"' : '') + '>';
+    dinner.forEach(function(id){
+      var t = S.tasks[id];
+      h += '<li class="task dinner stop" data-id="' + id + '">' +
+           '<button class="check" data-act="dinnerdone" data-id="' + id + '" aria-label="Mark done: ' + esc(t.text) + '"><i>' + I.check + '</i></button>' +
+           '<button class="txt" data-act="edit" data-id="' + id + '">' + esc(t.text) + tagLine(t, 'Dinnertime') + '</button></li>';
+    });
     S.today.forEach(function(id){ h += taskRow(id, true); });
     h += '</ul>';
   }
@@ -343,13 +352,6 @@ function todayHTML(){
     h += '<button class="link" data-act="pick" data-mode="more">There\'s room for one more</button>';
   }
 
-  dinnerShown = isDinnerTime();
-  var dinner = S.dinner.filter(function(id){ return S.tasks[id]; });
-  if (dinnerShown && dinner.length) {
-    h += '<h2 class="subhead">Dinnertime</h2><ul class="today" data-list="dinner">';
-    dinner.forEach(function(id){ h += taskRow(id, false); });
-    h += '</ul>';
-  }
   h += '<div class="waterline" role="separator"></div><div class="below"><div class="acts">';
   var planned = plannedTomorrow();
   if (planned.length) {
@@ -396,15 +398,14 @@ function reservoirHTML(){
   } else {
     h += '<ul class="res" id="res">';
     SECS.forEach(function(sc){
-      h += '<li class="sechead' + (sc[0] === 'timely' ? ' fixed' : '') + '" data-sec="' + sc[0] + '">' + sc[1] + '</li>';
+      if (sc[0] === 'longterm' && dinner.length) {
+        h += '<li class="sechead">Dinnertime</li>';
+        dinner.forEach(function(id){ h += rowHTML(id, false); });
+      }
+      h += '<li class="sechead' + (sc[0] === 'timely' ? ' stop' : '') + '" data-sec="' + sc[0] + '">' + sc[1] + '</li>';
       inSec(S.reservoir, sc[0]).forEach(function(id){ h += rowHTML(id, true); });
     });
     h += '</ul>';
-    if (dinner.length) {
-      h += '<ul class="res"><li class="sechead">Dinnertime</li>';
-      dinner.forEach(function(id){ h += rowHTML(id, false); });
-      h += '</ul>';
-    }
   }
   h += '<button class="fab" data-act="capture" aria-label="Add a task">' + I.plus + '</button>';
   return h;
@@ -469,7 +470,7 @@ function openForm(id){
   h += '<label class="f">Notes (optional)<textarea name="notes" rows="4" maxlength="2000" style="min-height:110px">' + (t && t.notes ? esc(t.notes) : '') + '</textarea></label>';
   h += '<fieldset><legend>Kind</legend>' + chipsHTML('tag', TAGS, tagOf(t)) + '</fieldset>';
   var cur = t ? (S.dinner.indexOf(id) >= 0 ? 'dinner' : secOf(id)) : 'whenever';
-  h += '<fieldset><legend>Where does it belong?</legend>' + chipsHTML('place', SECS.concat([['dinner', 'Dinnertime']]), cur) + '</fieldset>';
+  h += '<fieldset><legend>Where does it belong?</legend>' + chipsHTML('place', [SECS[0], SECS[1], ['dinner', 'Dinnertime'], SECS[2]], cur) + '</fieldset>';
   h += '<label class="f">Not before (optional)<input type="date" name="notBefore" value="' + (t && t.notBefore ? t.notBefore : '') + '"></label>';
   h += '<button class="btn full" type="submit">' + (t ? 'Save' : 'Tuck it away') + '</button>';
   if (t) {
@@ -556,19 +557,19 @@ function renderPicker(){
     var more = false;
     var candHTML = function(id, movable){
       var t = S.tasks[id], on = !!pick.sel[id];
-      return '<div class="cand row' + (on ? ' sel' : '') + (movable ? '' : ' fixed') + '" data-id="' + id + '">' +
+      return '<div class="cand row' + (on ? ' sel' : '') + (movable ? '' : ' fixed stop') + '" data-id="' + id + '">' +
         (movable ? '<button class="handle" data-id="' + id + '" aria-label="Reorder: ' + esc(t.text) + '. Use the up and down arrow keys.">' + I.grip + '</button>' : '') +
         '<button class="candmain" data-act="psel" data-id="' + id + '" aria-pressed="' + on + '"><i></i><span class="txt">' + esc(t.text) + tagLine(t) + '</span></button></div>';
     };
     h += '<div class="cands" id="cands">';
     var carried = ids.filter(onToday);
     if (carried.length) {
-      h += '<h3 class="sechead fixed" style="margin:0">From today</h3>';
+      h += '<h3 class="sechead fixed stop" style="margin:0">From today</h3>';
       carried.forEach(function(id){ h += candHTML(id, false); });
     }
     SECS.forEach(function(sc){
       var list = ids.filter(function(id){ return !onToday(id) && secOf(id) === sc[0]; });
-      h += '<h3 class="sechead' + (sc[0] === 'timely' ? ' fixed' : '') + '" style="margin:0" data-sec="' + sc[0] + '">' + sc[1] + '</h3>';
+      h += '<h3 class="sechead' + (sc[0] === 'timely' ? ' stop' : '') + '" style="margin:0" data-sec="' + sc[0] + '">' + sc[1] + '</h3>';
       list.slice(0, pick.shown).forEach(function(id){ h += candHTML(id, true); });
       if (list.length > pick.shown) more = true;
     });
@@ -634,6 +635,10 @@ document.addEventListener('click', function(e){
     S.today = S.today.filter(function(x){ return x !== id; });
     S.reservoir.unshift(id);
     save(); render(); toast('Back below the surface.');
+  } else if (act === 'dinnerdone') {
+    var snap = JSON.stringify(S);
+    removeTask(id); save(); render();
+    toast('Done.', function(){ S = JSON.parse(snap); save(); render(); });
   } else if (act === 'repeat') {
     S.tasks[id].keep = !S.tasks[id].keep;
     save(); render();
@@ -739,7 +744,7 @@ document.addEventListener('pointermove', function(e){
     r = next.getBoundingClientRect();
     if (e.clientY > r.top + r.height / 2) list.insertBefore(next, row);
   }
-  if (prev && !prev.classList.contains('fixed') && row.offsetTop === before) {
+  if (prev && !prev.classList.contains('stop') && row.offsetTop === before) {
     r = prev.getBoundingClientRect();
     if (e.clientY < r.top + r.height / 2) list.insertBefore(prev, row.nextSibling);
   }
@@ -756,7 +761,7 @@ function endDrag(e){
 function commitMove(list, id){
   if (list.id === 'res') commitOrder(list, id);
   else if (list.dataset.list) {
-    S[list.dataset.list] = [].map.call(list.children, function(li){ return li.dataset.id; });
+    S[list.dataset.list] = [].map.call(list.children, function(li){ return li.dataset.id; }).filter(function(x){ return S.dinner.indexOf(x) < 0; });
     save(); render();
   }
   else commitPick(list, id);
@@ -781,8 +786,8 @@ function commitPick(list, id){
 function commitOrder(list, movedId){
   var sec = 'timely', ids = [];
   [].forEach.call(list.children, function(li){
-    if (li.classList.contains('sechead')) { sec = li.dataset.sec; return; }
-    var t = S.tasks[li.dataset.id]; if (!t) return;
+    if (li.classList.contains('sechead')) { if (li.dataset.sec) sec = li.dataset.sec; return; }
+    var t = S.tasks[li.dataset.id]; if (!t || S.dinner.indexOf(li.dataset.id) >= 0) return;
     t.sec = sec; ids.push(li.dataset.id);
   });
   S.reservoir = ids;
@@ -798,7 +803,7 @@ document.addEventListener('keydown', function(e){
   var id = handle.dataset.id, row = handle.closest('.row, .task'), list = row.parentNode;
   if (e.key === 'ArrowUp') {
     var pv = row.previousElementSibling;
-    if (!pv || pv.classList.contains('fixed')) return;
+    if (!pv || pv.classList.contains('stop')) return;
     list.insertBefore(row, pv);
   } else {
     var nx = row.nextElementSibling;

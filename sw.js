@@ -1,4 +1,4 @@
-const CACHE = 'waterline-v15';
+const CACHE = 'waterline-v16';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
