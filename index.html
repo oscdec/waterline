@@ -74,14 +74,16 @@ button.txt{align-self:stretch}
 .link{min-height:44px;color:var(--muted);text-decoration:underline;text-underline-offset:3px;text-align:left}
 
 .waterline{height:4px;border-radius:2px;background:var(--ink);margin:24px 0}
-.below{display:flex;gap:16px;align-items:flex-start;justify-content:space-between}
-.acts{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
-.dots{flex:none;display:flex;flex-direction:column;gap:12px;margin:8px 4px 0 0}
-.dots span{display:flex;gap:14px}
-.dots b{width:12px;height:12px;border-radius:50%;background:var(--ink)}
-.dots span:nth-child(1) b{opacity:.28}
-.dots span:nth-child(2) b{opacity:.14;transform:scale(.8)}
-.dots span:nth-child(3) b{opacity:.08;transform:scale(.62)}
+.below{display:flex;gap:14px;align-items:stretch}
+.acts{flex:none;max-width:70%;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.dots{flex:1;min-width:0;display:flex;flex-direction:column;margin-right:-7px}
+.dots span{flex:1;min-height:20px;background-image:radial-gradient(circle at center, var(--ink) 0 var(--r), transparent calc(var(--r) + .7px));background-size:28px 100%;background-repeat:round no-repeat}
+.dots span:nth-child(1){--r:6px;opacity:.30}
+.dots span:nth-child(2){--r:5.5px;opacity:.22}
+.dots span:nth-child(3){--r:5px;opacity:.16}
+.dots span:nth-child(4){--r:4.5px;opacity:.11}
+.dots span:nth-child(5){--r:4px;opacity:.075}
+.dots span:nth-child(6){--r:3.5px;opacity:.045}
 .note{background:var(--soft);border-radius:18px;padding:16px 18px;width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px}
 
 .fab{position:fixed;right:max(20px, calc(50% - 220px));bottom:calc(env(safe-area-inset-bottom) + 24px);width:60px;height:60px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;box-shadow:0 4px 14px rgba(0,0,0,.18)}
@@ -149,7 +151,7 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 'use strict';
 
 var KEY = 'waterline.v1';
-var VERSION = 14;
+var VERSION = 15;
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
 var TAGS = [['oneday', 'One day'], ['project', 'Project']];
@@ -358,7 +360,7 @@ function todayHTML(){
   }
   h += '<button class="btn quiet" data-act="reservoir">Below The Surface</button>';
   h += '<button class="btn quiet" data-act="week">This Week</button>';
-  h += '</div><div class="dots" aria-hidden="true"><span><b></b><b></b><b></b></span><span><b></b><b></b><b></b></span><span><b></b><b></b><b></b></span></div></div>';
+  h += '</div><div class="dots" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div></div>';
   h += '<button class="fab" data-act="capture" aria-label="Add a task">' + I.plus + '</button>';
   return h;
 }
