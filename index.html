@@ -51,9 +51,9 @@ p{margin:0}
 .muted{color:var(--muted)}
 ul{list-style:none;margin:0;padding:0}
 
-.under{display:block;width:100%;min-height:0;margin:-8px 0 18px;padding:5px 0 5px 14px;border:0;border-left:3px solid var(--hair);border-radius:0;background:none;font-size:17px;line-height:1.4;font-style:italic;color:var(--ink);resize:none;overflow:hidden}
+.under{display:block;width:100%;min-height:0;margin:-6px 0 18px;padding:11px 14px;border:1.5px solid var(--hair);border-radius:14px;background:none;font-size:17px;line-height:1.4;font-style:italic;color:var(--ink);resize:none;overflow:hidden}
 .under::placeholder{color:var(--muted);opacity:.85}
-.under:focus-visible{outline:0;border-left-color:var(--accent)}
+.under:focus-visible{outline:0;border-color:var(--accent)}
 .today{display:flex;flex-direction:column;gap:10px}
 .task{display:flex;align-items:center;gap:2px;background:var(--surface);border-radius:18px;padding:8px 6px 8px 4px;min-height:64px}
 .check{flex:none;width:48px;height:48px;display:grid;place-items:center;border-radius:50%}
@@ -155,7 +155,7 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 'use strict';
 
 var KEY = 'waterline.v1';
-var VERSION = 18;
+var VERSION = 19;
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
 var TAGS = [['oneday', 'One day'], ['project', 'Project']];
@@ -197,12 +197,12 @@ function esc(s){
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
 function fresh(){
-  return {v: 1, cap: 3, day: dayKey(), tasks: {}, today: [], done: [], reservoir: [], dinner: [], log: [], tomorrow: [], tomorrowFor: null, under: '', underOn: false};
+  return {v: 1, cap: 3, day: dayKey(), tasks: {}, today: [], done: [], reservoir: [], dinner: [], log: [], tomorrow: [], tomorrowFor: null, under: '', underOn: false, underNext: '', underFor: null};
 }
 function valid(r){
   return r && r.v === 1 && r.tasks && Array.isArray(r.today) && Array.isArray(r.done) && Array.isArray(r.reservoir);
 }
-function fixUnder(r){ if (typeof r.under !== 'string') r.under = ''; r.underOn = r.underOn === true; }
+function fixUnder(r){ if (typeof r.under !== 'string') r.under = ''; r.underOn = r.underOn === true; if (typeof r.underNext !== 'string') r.underNext = ''; if (typeof r.underFor !== 'string') r.underFor = null; }
 function load(){
   try {
     var r = JSON.parse(localStorage.getItem(KEY));
@@ -284,7 +284,9 @@ function rollover(){
   }
   S.tomorrow = [];
   S.tomorrowFor = null;
-  S.under = '';
+  S.under = S.underNext && S.underFor && S.underFor <= k ? S.underNext : '';
+  S.underNext = '';
+  S.underFor = null;
   S.day = k;
   save();
 }
@@ -474,7 +476,7 @@ function sweepDinner(){
   save();
 }
 function sizeUnder(u){
-  u = u || document.getElementById('under'); if (!u) return;
+  if (!u) { [].forEach.call(document.querySelectorAll('.under'), sizeUnder); return; }
   u.style.height = 'auto'; u.style.height = u.scrollHeight + 'px';
 }
 function render(){
@@ -488,16 +490,20 @@ function render(){
     if (caret) { u.focus(); try { u.setSelectionRange(caret[0], caret[1]); } catch (e) {} }
   }
 }
-app.addEventListener('input', function(e){
-  var u = e.target; if (u.id !== 'under') return;
+document.addEventListener('input', function(e){
+  var u = e.target; if (!u.classList || !u.classList.contains('under')) return;
   if (/[\r\n]/.test(u.value)) u.value = u.value.replace(/\s*[\r\n]+\s*/g, ' ');
-  S.under = u.value.trim(); save(); sizeUnder(u);
+  if (u.id === 'undernext') { S.underNext = u.value.trim(); S.underFor = S.underNext ? nextDayKey() : null; }
+  else S.under = u.value.trim();
+  save(); sizeUnder(u);
 });
-app.addEventListener('keydown', function(e){
-  if (e.target.id === 'under' && e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('under')) { e.preventDefault(); e.target.blur(); }
 });
-app.addEventListener('focusout', function(e){
-  if (e.target.id === 'under' && e.target.value !== S.under) { e.target.value = S.under; sizeUnder(e.target); }
+document.addEventListener('focusout', function(e){
+  var u = e.target; if (!u.classList || !u.classList.contains('under')) return;
+  var v = u.id === 'undernext' ? S.underNext : S.under;
+  if (u.value !== v) { u.value = v; sizeUnder(u); }
 });
 window.addEventListener('resize', function(){ sizeUnder(); });
 
@@ -586,6 +592,7 @@ function openPicker(mode){
   if (mode === 'tomorrow') plannedTomorrow().forEach(function(id){ pick.sel[id] = true; });
   renderPicker();
   if (!sheet.open) sheet.showModal();
+  sizeUnder();
 }
 function selCount(){ return Object.keys(pick.sel).length; }
 function renderPicker(){
@@ -594,6 +601,7 @@ function renderPicker(){
   var h = '<div class="sheet"><header><div><h2 id="sheet-title">' + titles[pick.mode] + '</h2>' +
           '<p class="muted" style="font-size:15px">Up to ' + pick.limit + '. Drag a handle to reorder or change section.</p></div>' +
           '<button class="iconbtn" data-act="close" aria-label="Close">' + I.close + '</button></header>';
+  if (pick.mode === 'tomorrow' && S.underOn) h += '<textarea class="under" id="undernext" style="margin:0;flex:none" rows="1" maxlength="140" enterkeyhint="done" autocomplete="off" placeholder="Tomorrow\'s undercurrent" aria-label="Tomorrow\'s undercurrent">' + esc(S.underNext) + '</textarea>';
   h += '<div class="chips" role="group" aria-label="Filter by kind">' + [['', 'Anything']].concat(TAGS).map(function(o){
     return '<button class="chipbtn" data-act="ptag" data-tag="' + o[0] + '" aria-pressed="' + (pick.tag === o[0]) + '">' + o[1] + '</button>';
   }).join('') + '</div>';
@@ -627,6 +635,7 @@ function renderPicker(){
   var label = pick.mode === 'tomorrow' ? 'Set tomorrow' : 'Bring these up';
   h += '<button class="btn full" data-act="pconfirm"' + (n || pick.mode === 'tomorrow' ? '' : ' disabled style="opacity:.45"') + '>' + label + (n ? ' (' + n + ')' : '') + '</button></div>';
   sheet.innerHTML = h;
+  sizeUnder();
 }
 function confirmPick(){
   var all = candidates(false);
