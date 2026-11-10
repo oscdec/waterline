@@ -157,7 +157,7 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 'use strict';
 
 var KEY = 'waterline.v1';
-var VERSION = 20;
+var VERSION = 21;
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
 var TAGS = [['oneday', 'One day'], ['project', 'Project']];
@@ -513,6 +513,29 @@ document.addEventListener('focusout', function(e){
 });
 window.addEventListener('resize', function(){ sizeUnder(); });
 
+function hist(){ try { return history.state || {}; } catch (e) { return {}; } }
+function go(v){
+  if (view === 'today') { try { history.pushState({v: v}, ''); } catch (e) {} }
+  else { try { history.replaceState({v: v}, ''); } catch (e) {} }
+  view = v; render(); window.scrollTo(0, 0);
+}
+function goHome(){
+  if (hist().v && !hist().sheet) { history.back(); return; }
+  view = 'today'; render(); window.scrollTo(0, 0);
+}
+function showSheet(){
+  if (sheet.open) return;
+  sheet.showModal();
+  try { history.pushState({sheet: 1, v: view}, ''); } catch (e) {}
+}
+window.addEventListener('popstate', function(e){
+  var st = e.state || {}, v = st.v || 'today', moved = v !== view;
+  if (sheet.open) sheet.close();
+  view = v; render();
+  if (moved) window.scrollTo(0, 0);
+});
+try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; if (history.state) history.replaceState(null, ''); } catch (e) {}
+
 function chipsHTML(name, options, current){
   return '<div class="chips">' + options.map(function(o){
     return '<label class="chip"><input type="radio" name="' + name + '" value="' + o[0] + '"' + (o[0] === current ? ' checked' : '') + '><span>' + o[1] + '</span></label>';
@@ -538,7 +561,7 @@ function openForm(id){
   }
   h += '</form>';
   sheet.innerHTML = h;
-  if (!sheet.open) sheet.showModal();
+  showSheet();
   var ta = sheet.querySelector('textarea[name=text]');
   if (!t) ta.focus();
 }
@@ -550,7 +573,7 @@ function openLogForm(){
     '<label class="f">What did you do?<textarea name="text" rows="2" maxlength="200" enterkeyhint="done" required></textarea></label>' +
     '<p class="danger" id="formerr" role="alert" style="font-size:14px;display:none">Write a few words first.</p>' +
     '<button class="btn full" type="submit">Add to This Week</button></form>';
-  if (!sheet.open) sheet.showModal();
+  showSheet();
   sheet.querySelector('textarea').focus();
 }
 function submitLog(f){
@@ -618,7 +641,7 @@ function openPicker(mode){
   pick = {mode: mode, sel: {}, tag: '', shown: 5, limit: pickLimit(mode)};
   if (mode === 'tomorrow') plannedTomorrow().forEach(function(id){ pick.sel[id] = true; });
   renderPicker();
-  if (!sheet.open) sheet.showModal();
+  showSheet();
   sizeUnder();
 }
 function selCount(){ return Object.keys(pick.sel).length; }
@@ -699,7 +722,7 @@ document.getElementById('importer').addEventListener('change', function(e){
       if (!Array.isArray(data.log)) data.log = [];
       fixUnder(data);
       if (!confirm('Replace everything on this device with this backup?')) return;
-      S = data; save(); view = 'today'; render(); toast('Backup restored.');
+      S = data; save(); render(); goHome(); toast('Backup restored.');
     } catch (err) { toast('That file is not a Waterline backup.'); }
   };
   r.readAsText(file);
@@ -731,11 +754,11 @@ document.addEventListener('click', function(e){
   } else if (act === 'capture') { openForm(null); }
   else if (act === 'edit') { openForm(id); }
   else if (act === 'pick') { openPicker(el.dataset.mode); }
-  else if (act === 'reservoir') { view = 'reservoir'; render(); window.scrollTo(0, 0); }
+  else if (act === 'reservoir') { go('reservoir'); }
   else if (act === 'logdone') { openLogForm(); }
-  else if (act === 'week') { view = 'week'; render(); window.scrollTo(0, 0); }
-  else if (act === 'settings') { view = 'settings'; render(); window.scrollTo(0, 0); }
-  else if (act === 'home') { view = 'today'; render(); window.scrollTo(0, 0); }
+  else if (act === 'week') { go('week'); }
+  else if (act === 'settings') { go('settings'); }
+  else if (act === 'home') { goHome(); }
   else if (act === 'close') { sheet.close(); }
   else if (act === 'keep') { S.tasks[id].touched = Date.now(); save(); render(); }
   else if (act === 'letgo') { letGo(id); }
@@ -775,7 +798,7 @@ sheet.addEventListener('input', function(e){
   if (e.target.name === 'text') { var er = document.getElementById('formerr'); if (er) er.style.display = 'none'; }
 });
 sheet.addEventListener('click', function(e){ if (e.target === sheet) sheet.close(); });
-sheet.addEventListener('close', function(){ sheet.innerHTML = ''; });
+sheet.addEventListener('close', function(){ sheet.innerHTML = ''; if (hist().sheet) history.back(); });
 
 var swipe = null, swallowClick = false;
 function swipeReset(row){
