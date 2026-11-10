@@ -71,8 +71,9 @@ button.txt{align-self:stretch}
 .link{min-height:44px;color:var(--muted);text-decoration:underline;text-underline-offset:3px;text-align:left}
 
 .waterline{height:4px;border-radius:2px;background:var(--ink);margin:28px 0 22px}
-.below{display:flex;flex-direction:column;gap:12px;align-items:flex-start}
-.dots{display:flex;flex-direction:column;gap:12px;margin:0 0 8px 4px}
+.below{display:flex;gap:16px;align-items:flex-start;justify-content:space-between}
+.acts{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+.dots{flex:none;display:flex;flex-direction:column;gap:12px;margin:8px 4px 0 0}
 .dots span{display:flex;gap:14px}
 .dots b{width:12px;height:12px;border-radius:50%;background:var(--ink)}
 .dots span:nth-child(1) b{opacity:.28}
@@ -297,8 +298,7 @@ function todayHTML(){
     h += '<button class="link" data-act="pick" data-mode="more">There\'s room for one more</button>';
   }
 
-  h += '<div class="waterline" role="separator"></div><div class="below">';
-  h += '<div class="dots" aria-hidden="true"><span><b></b><b></b><b></b></span><span><b></b><b></b><b></b></span></div>';
+  h += '<div class="waterline" role="separator"></div><div class="below"><div class="acts">';
   var planned = plannedTomorrow();
   if (planned.length) {
     h += '<div class="note"><span>Tomorrow is set.</span><button class="link" data-act="pick" data-mode="tomorrow">Change</button></div>';
@@ -307,7 +307,7 @@ function todayHTML(){
     h += '<button class="btn ' + (evening ? '' : 'quiet') + '" data-act="pick" data-mode="tomorrow">Plan tomorrow</button>';
   }
   h += '<button class="btn quiet" data-act="reservoir">Below The Surface</button>';
-  h += '</div>';
+  h += '</div><div class="dots" aria-hidden="true"><span><b></b><b></b><b></b></span><span><b></b><b></b><b></b></span></div></div>';
   h += '<button class="fab" data-act="capture" aria-label="Add a task">' + I.plus + '</button>';
   return h;
 }
