@@ -140,7 +140,7 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 'use strict';
 
 var KEY = 'waterline.v1';
-var VERSION = 9;
+var VERSION = 10;
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
 var TAGS = [['', 'No tag'], ['quick', 'Quick'], ['deep', 'Deep focus'], ['errand', 'Errand'], ['project', 'Project']];
@@ -188,9 +188,15 @@ function load(){
   } catch (e) {}
   return fresh();
 }
-function isTimely(id){ return S.tasks[id] && S.tasks[id].sec === 'timely'; }
+var SECS = [['timely', 'Timely'], ['whenever', 'Casual'], ['longterm', 'Long term']];
+function secOf(id){
+  var v = S.tasks[id] ? S.tasks[id].sec : '';
+  return v === 'timely' || v === 'longterm' ? v : 'whenever';
+}
+function inSec(ids, sec){ return ids.filter(function(id){ return secOf(id) === sec; }); }
 function norm(){
-  S.reservoir = S.reservoir.filter(isTimely).concat(S.reservoir.filter(function(id){ return !isTimely(id); }));
+  var r = S.reservoir;
+  S.reservoir = inSec(r, 'timely').concat(inSec(r, 'whenever'), inSec(r, 'longterm'));
 }
 function save(){ norm(); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
 function isDinnerTime(){ var h = new Date().getHours(); return h >= 17 || h < DAY_STARTS_AT; }
@@ -344,7 +350,7 @@ function staleId(){
 function reservoirHTML(){
   var h = '<div class="top"><button class="iconbtn" data-act="home" aria-label="Back to today">' + I.back + '</button>' +
           '<div class="brand"><span>Below The Surface</span></div><span style="width:44px"></span></div>';
-  h += '<p class="muted" style="margin:16px 0 20px">Drag the handle to reorder, or to move between Timely and Whenever. Swipe right to let one go.</p>';
+  h += '<p class="muted" style="margin:16px 0 20px">Drag the handle to reorder, or to move a task to another section. Swipe right to let one go.</p>';
   var s = staleId();
   if (s) {
     h += '<div class="ask"><p class="muted" style="font-size:14px">This has been resting a while. Still want it?</p><p>' + esc(S.tasks[s].text) + '</p>' +
@@ -362,10 +368,10 @@ function reservoirHTML(){
     h += '<div class="state"><h2>Still water</h2><p class="muted">Nothing is waiting down here.</p></div>';
   } else {
     h += '<ul class="res" id="res">';
-    h += '<li class="sechead" data-sec="timely">Timely</li>';
-    S.reservoir.filter(isTimely).forEach(function(id){ h += rowHTML(id, true); });
-    h += '<li class="sechead" data-sec="whenever">Whenever</li>';
-    S.reservoir.filter(function(id){ return !isTimely(id); }).forEach(function(id){ h += rowHTML(id, true); });
+    SECS.forEach(function(sc){
+      h += '<li class="sechead" data-sec="' + sc[0] + '">' + sc[1] + '</li>';
+      inSec(S.reservoir, sc[0]).forEach(function(id){ h += rowHTML(id, true); });
+    });
     h += '</ul>';
     if (dinner.length) {
       h += '<ul class="res"><li class="sechead">Dinnertime</li>';
@@ -412,8 +418,8 @@ function openForm(id){
   h += '<p class="danger" id="formerr" role="alert" style="font-size:14px;display:none">Write a few words first.</p>';
   h += '<label class="f">Notes (optional)<textarea name="notes" rows="4" maxlength="2000" style="min-height:110px">' + (t && t.notes ? esc(t.notes) : '') + '</textarea></label>';
   h += '<fieldset><legend>Kind</legend>' + chipsHTML('tag', TAGS, t ? (t.tag || '') : '') + '</fieldset>';
-  var cur = t ? (S.dinner.indexOf(id) >= 0 ? 'dinner' : (t.sec === 'timely' ? 'timely' : 'whenever')) : 'whenever';
-  h += '<fieldset><legend>Where does it belong?</legend>' + chipsHTML('place', [['timely', 'Timely'], ['whenever', 'Whenever'], ['dinner', 'Dinnertime']], cur) + '</fieldset>';
+  var cur = t ? (S.dinner.indexOf(id) >= 0 ? 'dinner' : secOf(id)) : 'whenever';
+  h += '<fieldset><legend>Where does it belong?</legend>' + chipsHTML('place', SECS.concat([['dinner', 'Dinnertime']]), cur) + '</fieldset>';
   h += '<label class="f">Not before (optional)<input type="date" name="notBefore" value="' + (t && t.notBefore ? t.notBefore : '') + '"></label>';
   h += '<button class="btn full" type="submit">' + (t ? 'Save' : 'Tuck it away') + '</button>';
   if (t) {
@@ -498,10 +504,10 @@ function renderPicker(){
   } else {
     var onToday = function(id){ return S.today.indexOf(id) >= 0; };
     var groups = [
-      ['Still on today', ids.filter(onToday)],
-      ['Timely', ids.filter(function(id){ return !onToday(id) && isTimely(id); })],
-      ['Whenever', ids.filter(function(id){ return !onToday(id) && !isTimely(id); })]
-    ];
+      ['Still on today', ids.filter(onToday)]
+    ].concat(SECS.map(function(sc){
+      return [sc[1], ids.filter(function(id){ return !onToday(id) && secOf(id) === sc[0]; })];
+    }));
     var more = false;
     h += '<div class="cands">';
     groups.forEach(function(g){
