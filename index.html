@@ -51,6 +51,9 @@ p{margin:0}
 .muted{color:var(--muted)}
 ul{list-style:none;margin:0;padding:0}
 
+.under{display:block;width:100%;min-height:0;margin:-8px 0 18px;padding:5px 0 5px 14px;border:0;border-left:3px solid var(--hair);border-radius:0;background:none;font-size:17px;line-height:1.4;font-style:italic;color:var(--ink);resize:none;overflow:hidden}
+.under::placeholder{color:var(--muted);opacity:.85}
+.under:focus-visible{outline:0;border-left-color:var(--accent)}
 .today{display:flex;flex-direction:column;gap:10px}
 .task{display:flex;align-items:center;gap:2px;background:var(--surface);border-radius:18px;padding:8px 6px 8px 4px;min-height:64px}
 .check{flex:none;width:48px;height:48px;display:grid;place-items:center;border-radius:50%}
@@ -152,7 +155,7 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 'use strict';
 
 var KEY = 'waterline.v1';
-var VERSION = 17;
+var VERSION = 18;
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
 var TAGS = [['oneday', 'One day'], ['project', 'Project']];
@@ -194,15 +197,16 @@ function esc(s){
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
 function fresh(){
-  return {v: 1, cap: 3, day: dayKey(), tasks: {}, today: [], done: [], reservoir: [], dinner: [], log: [], tomorrow: [], tomorrowFor: null};
+  return {v: 1, cap: 3, day: dayKey(), tasks: {}, today: [], done: [], reservoir: [], dinner: [], log: [], tomorrow: [], tomorrowFor: null, under: '', underOn: false};
 }
 function valid(r){
   return r && r.v === 1 && r.tasks && Array.isArray(r.today) && Array.isArray(r.done) && Array.isArray(r.reservoir);
 }
+function fixUnder(r){ if (typeof r.under !== 'string') r.under = ''; r.underOn = r.underOn === true; }
 function load(){
   try {
     var r = JSON.parse(localStorage.getItem(KEY));
-    if (valid(r)) { if (!Array.isArray(r.tomorrow)) r.tomorrow = []; if (!Array.isArray(r.dinner)) r.dinner = []; if (!Array.isArray(r.log)) r.log = []; return r; }
+    if (valid(r)) { if (!Array.isArray(r.tomorrow)) r.tomorrow = []; if (!Array.isArray(r.dinner)) r.dinner = []; if (!Array.isArray(r.log)) r.log = []; fixUnder(r); return r; }
   } catch (e) {}
   return fresh();
 }
@@ -280,6 +284,7 @@ function rollover(){
   }
   S.tomorrow = [];
   S.tomorrowFor = null;
+  S.under = '';
   S.day = k;
   save();
 }
@@ -322,6 +327,7 @@ function todayHTML(){
        '<button class="iconbtn" data-act="settings" aria-label="Settings">' + I.gear + '</button></div>';
   if (!isInstalled()) h += '<button class="btn full" style="margin-top:14px" data-act="install">' + I.down + 'Install Waterline on this phone</button>';
   h += '<p class="date">' + esc(niceDate(S.day)) + '</p><h1>Today</h1>';
+  if (S.underOn) h += '<textarea class="under" id="under" rows="1" maxlength="140" enterkeyhint="done" autocomplete="off" placeholder="Today\'s undercurrent" aria-label="Today\'s undercurrent">' + esc(S.under) + '</textarea>';
 
   dinnerShown = isDinnerTime();
   var dinner = dinnerShown ? S.dinner.filter(function(id){ return S.tasks[id] && S.tasks[id].awayDay !== S.day; }) : [];
@@ -449,6 +455,9 @@ function settingsHTML(){
     h += '<button class="chipbtn" data-act="cap" data-n="' + n + '" aria-pressed="' + (S.cap === n) + '">' + n + '</button>';
   });
   h += '</div></div>';
+  h += '<div class="state" style="margin-top:14px"><h2>Undercurrent</h2><p class="muted">A line at the top of Today for a thought or a frame of mind to carry through the day. It clears each morning.</p><div class="seg">' +
+       '<button class="chipbtn" data-act="under" data-on="1" aria-pressed="' + S.underOn + '">Show</button>' +
+       '<button class="chipbtn" data-act="under" data-on="" aria-pressed="' + !S.underOn + '">Hide</button></div></div>';
   h += '<div class="state" style="margin-top:14px"><h2>Backup</h2><p class="muted">Your list lives only on this device. Save a copy now and then, or to move it to another device.</p>' +
        '<div class="seg" style="flex-wrap:wrap"><button class="btn quiet" data-act="export">Save a backup</button><button class="btn quiet" data-act="import">Restore from backup</button></div></div>';
   h += '<p class="muted" style="margin:20px 4px;font-size:14px">A new day starts at 4am. Anything unfinished slips quietly back below the surface, at the top.</p>';
@@ -464,11 +473,33 @@ function sweepDinner(){
   gone.forEach(function(id){ S.log.push({day: S.day, text: S.tasks[id].text}); removeTask(id); });
   save();
 }
+function sizeUnder(u){
+  u = u || document.getElementById('under'); if (!u) return;
+  u.style.height = 'auto'; u.style.height = u.scrollHeight + 'px';
+}
 function render(){
+  var a = document.activeElement, caret = a && a.id === 'under' ? [a.selectionStart, a.selectionEnd] : null;
   rollover();
   sweepDinner();
   app.innerHTML = view === 'week' ? weekHTML() : view === 'reservoir' ? reservoirHTML() : view === 'settings' ? settingsHTML() : todayHTML();
+  var u = document.getElementById('under');
+  if (u) {
+    sizeUnder(u);
+    if (caret) { u.focus(); try { u.setSelectionRange(caret[0], caret[1]); } catch (e) {} }
+  }
 }
+app.addEventListener('input', function(e){
+  var u = e.target; if (u.id !== 'under') return;
+  if (/[\r\n]/.test(u.value)) u.value = u.value.replace(/\s*[\r\n]+\s*/g, ' ');
+  S.under = u.value.trim(); save(); sizeUnder(u);
+});
+app.addEventListener('keydown', function(e){
+  if (e.target.id === 'under' && e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+});
+app.addEventListener('focusout', function(e){
+  if (e.target.id === 'under' && e.target.value !== S.under) { e.target.value = S.under; sizeUnder(e.target); }
+});
+window.addEventListener('resize', function(){ sizeUnder(); });
 
 function chipsHTML(name, options, current){
   return '<div class="chips">' + options.map(function(o){
@@ -630,6 +661,7 @@ document.getElementById('importer').addEventListener('change', function(e){
       if (!Array.isArray(data.tomorrow)) data.tomorrow = [];
       if (!Array.isArray(data.dinner)) data.dinner = [];
       if (!Array.isArray(data.log)) data.log = [];
+      fixUnder(data);
       if (!confirm('Replace everything on this device with this backup?')) return;
       S = data; save(); view = 'today'; render(); toast('Backup restored.');
     } catch (err) { toast('That file is not a Waterline backup.'); }
@@ -677,6 +709,7 @@ document.addEventListener('click', function(e){
     save(); sheet.close(); render();
   }
   else if (act === 'cap') { S.cap = +el.dataset.n; save(); render(); }
+  else if (act === 'under') { S.underOn = !!el.dataset.on; save(); render(); }
   else if (act === 'export') { exportData(); }
   else if (act === 'import') { document.getElementById('importer').click(); }
   else if (act === 'ptag') { pick.tag = el.dataset.tag; pick.shown = 5; renderPicker(); }
