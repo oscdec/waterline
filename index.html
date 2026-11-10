@@ -140,6 +140,7 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 'use strict';
 
 var KEY = 'waterline.v1';
+var VERSION = 9;
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
 var TAGS = [['', 'No tag'], ['quick', 'Quick'], ['deep', 'Deep focus'], ['errand', 'Errand'], ['project', 'Project']];
@@ -387,6 +388,7 @@ function settingsHTML(){
   h += '<div class="state" style="margin-top:14px"><h2>Backup</h2><p class="muted">Your list lives only on this device. Save a copy now and then, or to move it to another device.</p>' +
        '<div class="seg" style="flex-wrap:wrap"><button class="btn quiet" data-act="export">Save a backup</button><button class="btn quiet" data-act="import">Restore from backup</button></div></div>';
   h += '<p class="muted" style="margin:20px 4px;font-size:14px">A new day starts at 4am. Anything unfinished slips quietly back below the surface, at the top.</p>';
+  h += '<p class="muted" style="margin:20px 4px;font-size:14px">Waterline version ' + VERSION + '</p>';
   return h;
 }
 
@@ -723,7 +725,14 @@ setInterval(function(){ if ((S.day !== dayKey() || (view === 'today' && dinnerSh
 render();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('./sw.js').catch(function(){});
+  var hadWorker = !!navigator.serviceWorker.controller, reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function(){
+    if (!hadWorker || reloaded) return;
+    reloaded = true; location.reload();
+  });
+  navigator.serviceWorker.register('./sw.js', {updateViaCache: 'none'}).then(function(reg){
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden) reg.update().catch(function(){}); });
+  }).catch(function(){});
 }
 })();
 </script>
