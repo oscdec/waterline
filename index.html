@@ -97,6 +97,10 @@ button.txt{align-self:stretch}
 .sechead{font-size:14px;font-weight:600;color:var(--muted);padding:14px 4px 2px}
 .row.nohandle .rowmain{padding-left:16px}
 .subhead{margin:26px 0 10px;font-size:20px}
+.donelist{background:var(--surface);border-radius:18px;padding:6px 16px}
+.donelist li{display:flex;gap:12px;align-items:flex-start;padding:10px 0;overflow-wrap:anywhere}
+.donelist li + li{border-top:1px solid var(--hair)}
+.donelist svg{flex:none;width:16px;height:16px;margin-top:5px;color:var(--muted)}
 .ask{background:var(--soft);border-radius:18px;padding:18px;margin-bottom:16px;display:flex;flex-direction:column;gap:12px}
 .ask .pair{display:flex;gap:10px}
 
@@ -145,7 +149,7 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 'use strict';
 
 var KEY = 'waterline.v1';
-var VERSION = 13;
+var VERSION = 14;
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
 var TAGS = [['oneday', 'One day'], ['project', 'Project']];
@@ -168,6 +172,11 @@ function fmt(d){ return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pa
 function shifted(){ return new Date(Date.now() - DAY_STARTS_AT * 3600000); }
 function dayKey(){ return fmt(shifted()); }
 function nextDayKey(){ var d = shifted(); d.setDate(d.getDate() + 1); return fmt(d); }
+function mondayOf(key){
+  var p = key.split('-'), d = new Date(+p[0], +p[1] - 1, +p[2]);
+  d.setDate(d.getDate() - (d.getDay() + 6) % 7);
+  return fmt(d);
+}
 function niceDate(key){
   var p = key.split('-');
   return new Date(+p[0], +p[1] - 1, +p[2]).toLocaleDateString(undefined, {weekday: 'long', month: 'long', day: 'numeric'});
@@ -182,7 +191,7 @@ function esc(s){
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
 function fresh(){
-  return {v: 1, cap: 3, day: dayKey(), tasks: {}, today: [], done: [], reservoir: [], dinner: [], tomorrow: [], tomorrowFor: null};
+  return {v: 1, cap: 3, day: dayKey(), tasks: {}, today: [], done: [], reservoir: [], dinner: [], log: [], tomorrow: [], tomorrowFor: null};
 }
 function valid(r){
   return r && r.v === 1 && r.tasks && Array.isArray(r.today) && Array.isArray(r.done) && Array.isArray(r.reservoir);
@@ -190,7 +199,7 @@ function valid(r){
 function load(){
   try {
     var r = JSON.parse(localStorage.getItem(KEY));
-    if (valid(r)) { if (!Array.isArray(r.tomorrow)) r.tomorrow = []; if (!Array.isArray(r.dinner)) r.dinner = []; return r; }
+    if (valid(r)) { if (!Array.isArray(r.tomorrow)) r.tomorrow = []; if (!Array.isArray(r.dinner)) r.dinner = []; if (!Array.isArray(r.log)) r.log = []; return r; }
   } catch (e) {}
   return fresh();
 }
@@ -249,7 +258,13 @@ function letGo(id){
 function rollover(){
   var k = dayKey();
   if (S.day === k) return;
-  S.done.forEach(function(id){ if (!(S.tasks[id] && S.tasks[id].keep)) delete S.tasks[id]; });
+  S.done.forEach(function(id){
+    var t = S.tasks[id]; if (!t) return;
+    S.log.push({day: S.day, text: t.text});
+    if (t.keep) t.keep = false; else delete S.tasks[id];
+  });
+  var weekStart = mondayOf(k);
+  S.log = S.log.filter(function(e){ return e.day >= weekStart; });
   S.dinner = S.dinner.filter(function(id){ return S.tasks[id]; });
   var back = S.today.filter(function(id){ return S.tasks[id]; });
   S.reservoir = back.concat(S.reservoir.filter(function(id){ return back.indexOf(id) < 0; }));
@@ -275,7 +290,6 @@ function plannedTomorrow(){ return S.tomorrow.filter(function(id){ return S.task
 function tagLine(t, extra){
   var bits = [];
   if (tagOf(t) === 'project') bits.push('Project');
-  if (t.keep) bits.push('Repeats');
   if (t.notes) bits.push('Has a note');
   if (extra) bits.push(extra);
   return bits.length ? '<span class="tag">' + esc(bits.join(' · ')) + '</span>' : '';
@@ -285,12 +299,12 @@ function taskRow(id, sendback){
   var t = S.tasks[id]; if (!t) return '';
   var done = S.done.indexOf(id) >= 0;
   var side = '';
-  if (done) side = '<button class="iconbtn" data-act="repeat" data-id="' + id + '" aria-pressed="' + !!t.keep + '" aria-label="Keep for another day: ' + esc(t.text) + '">' + I.repeat + '</button>';
+  if (done) side = '<button class="iconbtn" data-act="repeat" data-id="' + id + '" aria-pressed="' + !!t.keep + '" aria-label="Keep for tomorrow: ' + esc(t.text) + '">' + I.repeat + '</button>';
   else if (sendback) side = '<button class="iconbtn" data-act="sendback" data-id="' + id + '" aria-label="Send back below the surface: ' + esc(t.text) + '">' + I.down + '</button>';
   return '<li class="task' + (done ? ' done' : '') + '" data-id="' + id + '">' +
     '<button class="handle" data-id="' + id + '" aria-label="Reorder: ' + esc(t.text) + '. Use the up and down arrow keys.">' + I.grip + '</button>' +
     '<button class="check" data-act="toggle" data-id="' + id + '" aria-pressed="' + done + '" aria-label="' + (done ? 'Mark not done: ' : 'Mark done: ') + esc(t.text) + '"><i>' + I.check + '</i></button>' +
-    '<button class="txt" data-act="edit" data-id="' + id + '">' + esc(t.text) + tagLine(t, done && t.keep ? 'back tomorrow' : '') + '</button>' +
+    '<button class="txt" data-act="edit" data-id="' + id + '">' + esc(t.text) + tagLine(t, done && t.keep ? 'Back tomorrow' : '') + '</button>' +
     side + '</li>';
 }
 
@@ -343,6 +357,7 @@ function todayHTML(){
     h += '<button class="btn ' + (evening ? '' : 'quiet') + '" data-act="pick" data-mode="tomorrow">Plan tomorrow</button>';
   }
   h += '<button class="btn quiet" data-act="reservoir">Below The Surface</button>';
+  h += '<button class="btn quiet" data-act="week">This Week</button>';
   h += '</div><div class="dots" aria-hidden="true"><span><b></b><b></b><b></b></span><span><b></b><b></b><b></b></span><span><b></b><b></b><b></b></span></div></div>';
   h += '<button class="fab" data-act="capture" aria-label="Add a task">' + I.plus + '</button>';
   return h;
@@ -393,6 +408,29 @@ function reservoirHTML(){
   return h;
 }
 
+function weekHTML(){
+  var h = '<div class="top"><button class="iconbtn" data-act="home" aria-label="Back to today">' + I.back + '</button>' +
+          '<div class="brand"><span>This Week</span></div><span style="width:44px"></span></div>';
+  var weekStart = mondayOf(S.day), byDay = {}, days = [];
+  var entries = S.log.filter(function(e){ return e.day >= weekStart; }).concat(
+    S.done.filter(function(id){ return S.tasks[id]; }).map(function(id){ return {day: S.day, text: S.tasks[id].text}; }));
+  entries.forEach(function(e){
+    if (!byDay[e.day]) { byDay[e.day] = []; days.push(e.day); }
+    byDay[e.day].push(e.text);
+  });
+  days.sort().reverse();
+  h += '<p class="muted" style="margin:16px 0 8px">What you have finished since Monday. It clears when a new week begins.</p>';
+  if (!days.length) {
+    h += '<div class="state" style="margin-top:12px"><h2>A quiet start</h2><p class="muted">Nothing checked off yet this week.</p></div>';
+  }
+  days.forEach(function(d){
+    h += '<h2 class="subhead">' + (d === S.day ? 'Today' : esc(niceDate(d))) + '</h2><ul class="donelist">';
+    byDay[d].forEach(function(text){ h += '<li>' + I.check + '<span>' + esc(text) + '</span></li>'; });
+    h += '</ul>';
+  });
+  return h;
+}
+
 function settingsHTML(){
   var h = '<div class="top"><button class="iconbtn" data-act="home" aria-label="Back to today">' + I.back + '</button>' +
           '<div class="brand"><span>Settings</span></div><span style="width:44px"></span></div>';
@@ -410,7 +448,7 @@ function settingsHTML(){
 
 function render(){
   rollover();
-  app.innerHTML = view === 'reservoir' ? reservoirHTML() : view === 'settings' ? settingsHTML() : todayHTML();
+  app.innerHTML = view === 'week' ? weekHTML() : view === 'reservoir' ? reservoirHTML() : view === 'settings' ? settingsHTML() : todayHTML();
 }
 
 function chipsHTML(name, options, current){
@@ -572,6 +610,7 @@ document.getElementById('importer').addEventListener('change', function(e){
       if (!valid(data)) throw new Error('bad');
       if (!Array.isArray(data.tomorrow)) data.tomorrow = [];
       if (!Array.isArray(data.dinner)) data.dinner = [];
+      if (!Array.isArray(data.log)) data.log = [];
       if (!confirm('Replace everything on this device with this backup?')) return;
       S = data; save(); view = 'today'; render(); toast('Backup restored.');
     } catch (err) { toast('That file is not a Waterline backup.'); }
@@ -596,12 +635,13 @@ document.addEventListener('click', function(e){
   } else if (act === 'repeat') {
     S.tasks[id].keep = !S.tasks[id].keep;
     save(); render();
-    toast(S.tasks[id].keep ? 'Kept. It returns tomorrow.' : 'It will clear tonight.');
+    toast(S.tasks[id].keep ? 'Kept for tomorrow.' : 'It will clear tonight.');
     var rb = app.querySelector('[data-act="repeat"][data-id="' + id + '"]'); if (rb) rb.focus();
   } else if (act === 'capture') { openForm(null); }
   else if (act === 'edit') { openForm(id); }
   else if (act === 'pick') { openPicker(el.dataset.mode); }
   else if (act === 'reservoir') { view = 'reservoir'; render(); window.scrollTo(0, 0); }
+  else if (act === 'week') { view = 'week'; render(); window.scrollTo(0, 0); }
   else if (act === 'settings') { view = 'settings'; render(); window.scrollTo(0, 0); }
   else if (act === 'home') { view = 'today'; render(); window.scrollTo(0, 0); }
   else if (act === 'close') { sheet.close(); }
