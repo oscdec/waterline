@@ -13,4 +13,4 @@ A calm to-do list. Only today's few sit above the surface; everything else rests
 
 - Your list is stored only on the device, in the browser's storage. Use Settings → Save a backup now and then.
 - A new day starts at 4am. Unfinished tasks return to the top of the reservoir; finished ones are cleared.
-- To ship an update, upload the changed files and bump `waterline-v1` in `sw.js` to `waterline-v2`.
+- To ship an update, upload the changed files and bump the version number in `index.html` and `sw.js` (for example 1.21 to 1.22).
