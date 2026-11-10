@@ -64,6 +64,7 @@ ul{list-style:none;margin:0;padding:0}
 
 .state{background:var(--surface);border-radius:18px;padding:24px 20px;display:flex;flex-direction:column;gap:14px;align-items:flex-start}
 .btn{min-height:48px;padding:0 22px;border-radius:24px;background:var(--accent);color:var(--accent-ink);font-weight:600;display:inline-flex;align-items:center;gap:8px}
+.btn svg{width:20px;height:20px}
 .btn.quiet{background:var(--soft);color:var(--ink)}
 .btn.full{width:100%;justify-content:center}
 .link{min-height:44px;color:var(--muted);text-decoration:underline;text-underline-offset:3px;text-align:left}
@@ -188,6 +189,18 @@ var app = document.getElementById('app');
 var sheet = document.getElementById('sheet');
 var toastEl = document.getElementById('toast');
 var toastTimer;
+var installEvt = null;
+function isInstalled(){
+  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+}
+window.addEventListener('beforeinstallprompt', function(e){
+  e.preventDefault(); installEvt = e;
+  if (view === 'today' && !sheet.open) render();
+});
+window.addEventListener('appinstalled', function(){
+  installEvt = null; toast('Waterline is on your home screen.');
+  if (!sheet.open) render();
+});
 
 function toast(msg){
   toastEl.textContent = msg;
@@ -237,6 +250,7 @@ function todayHTML(){
   var h = '';
   h += '<div class="top"><div class="brand">' + I.logo + '<span>Waterline</span></div>' +
        '<button class="iconbtn" data-act="settings" aria-label="Settings">' + I.gear + '</button></div>';
+  if (!isInstalled()) h += '<button class="btn full" style="margin-top:14px" data-act="install">' + I.down + 'Install Waterline on this phone</button>';
   h += '<p class="date">' + esc(niceDate(S.day)) + '</p><h1>Today</h1>';
 
   if (!empty) {
@@ -514,6 +528,15 @@ document.addEventListener('click', function(e){
     var b = sheet.querySelector('.cand[data-id="' + id + '"]'); if (b) b.focus();
   }
   else if (act === 'pconfirm') { confirmPick(); }
+  else if (act === 'install') {
+    if (installEvt) {
+      var ev = installEvt; installEvt = null;
+      ev.prompt();
+      if (ev.userChoice) ev.userChoice.then(function(){ render(); });
+    } else {
+      alert('To install: open the browser menu (the three dots, or the Share button on iPhone) and choose "Install app" or "Add to Home screen".');
+    }
+  }
 });
 
 sheet.addEventListener('submit', function(e){ e.preventDefault(); submitForm(e.target); });
