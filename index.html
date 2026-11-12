@@ -161,7 +161,7 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 'use strict';
 
 var KEY = 'waterline.v1';
-var VERSION = '1.22';
+var VERSION = '1.23';
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
 var LT_DAYS = 14;
@@ -294,7 +294,7 @@ function rollover(){
   }
   S.tomorrow = [];
   S.tomorrowFor = null;
-  S.under = S.underNext && S.underFor && S.underFor <= k ? S.underNext : '';
+  if (S.underFor && S.underFor <= k) S.under = S.underNext;
   S.underNext = '';
   S.underFor = null;
   S.day = k;
@@ -478,7 +478,7 @@ function settingsHTML(){
     h += '<button class="chipbtn" data-act="cap" data-n="' + n + '" aria-pressed="' + (S.cap === n) + '">' + n + '</button>';
   });
   h += '</div></div>';
-  h += '<div class="state" style="margin-top:14px"><h2>Undercurrent</h2><p class="muted">A line at the top of Today for a thought or a frame of mind to carry through the day. It clears each morning.</p><div class="seg">' +
+  h += '<div class="state" style="margin-top:14px"><h2>Undercurrent</h2><p class="muted">A line at the top of Today for a thought or a frame of mind to carry through the day. It stays until you change it.</p><div class="seg">' +
        '<button class="chipbtn" data-act="under" data-on="1" aria-pressed="' + S.underOn + '">Show</button>' +
        '<button class="chipbtn" data-act="under" data-on="" aria-pressed="' + !S.underOn + '">Hide</button></div></div>';
   h += '<div class="state" style="margin-top:14px"><h2>Backup</h2><p class="muted">Your list lives only on this device. Save a copy now and then, or to move it to another device.</p>' +
@@ -496,6 +496,7 @@ function sweepDinner(){
   gone.forEach(function(id){ S.log.push({day: S.day, text: S.tasks[id].text}); removeTask(id); });
   save();
 }
+function underNextVal(){ return S.underFor ? S.underNext : S.under; }
 function sizeUnder(u){
   if (!u) { [].forEach.call(document.querySelectorAll('.under'), sizeUnder); return; }
   u.style.height = 'auto'; u.style.height = u.scrollHeight + 'px';
@@ -514,7 +515,7 @@ function render(){
 document.addEventListener('input', function(e){
   var u = e.target; if (!u.classList || !u.classList.contains('under')) return;
   if (/[\r\n]/.test(u.value)) u.value = u.value.replace(/\s*[\r\n]+\s*/g, ' ');
-  if (u.id === 'undernext') { S.underNext = u.value.trim(); S.underFor = S.underNext ? nextDayKey() : null; }
+  if (u.id === 'undernext') { S.underNext = u.value.trim(); S.underFor = nextDayKey(); }
   else S.under = u.value.trim();
   save(); sizeUnder(u);
 });
@@ -526,7 +527,7 @@ document.addEventListener('keydown', function(e){
 });
 document.addEventListener('focusout', function(e){
   var u = e.target; if (!u.classList || !u.classList.contains('under')) return;
-  var v = u.id === 'undernext' ? S.underNext : S.under;
+  var v = u.id === 'undernext' ? underNextVal() : S.under;
   if (u.value !== v) { u.value = v; sizeUnder(u); }
 });
 window.addEventListener('resize', function(){ sizeUnder(); });
@@ -657,8 +658,9 @@ function candidates(filtered){
   return ids;
 }
 function openPicker(mode){
-  pick = {mode: mode, sel: {}, tag: '', shown: 5, limit: pickLimit(mode)};
-  if (mode === 'tomorrow') plannedTomorrow().forEach(function(id){ pick.sel[id] = true; });
+  pick = {mode: mode, sel: {}, tag: '', shown: 5, limit: pickLimit(mode), lt: false};
+  if (mode === 'tomorrow') plannedTomorrow().forEach(function(id){ pick.sel[id] = true; if (S.today.indexOf(id) < 0 && secOf(id) === 'longterm') pick.lt = true; });
+  if (pick.lt) { S.ltSeen = Date.now(); save(); }
   renderPicker();
   showSheet();
   sizeUnder();
@@ -670,7 +672,7 @@ function renderPicker(){
   var h = '<div class="sheet"><header><div><h2 id="sheet-title">' + titles[pick.mode] + '</h2>' +
           '<p class="muted" style="font-size:15px">Up to ' + pick.limit + '. Drag a handle to reorder or change section.</p></div>' +
           '<button class="iconbtn" data-act="close" aria-label="Close">' + I.close + '</button></header>';
-  if (pick.mode === 'tomorrow' && S.underOn) h += '<textarea class="under" id="undernext" style="margin:0;flex:none" rows="1" maxlength="140" enterkeyhint="done" autocomplete="off" placeholder="Tomorrow\'s undercurrent" aria-label="Tomorrow\'s undercurrent">' + esc(S.underNext) + '</textarea>';
+  if (pick.mode === 'tomorrow' && S.underOn) h += '<textarea class="under" id="undernext" style="margin:0;flex:none" rows="1" maxlength="140" enterkeyhint="done" autocomplete="off" placeholder="Tomorrow\'s undercurrent" aria-label="Tomorrow\'s undercurrent">' + esc(underNextVal()) + '</textarea>';
   h += '<div class="chips" role="group" aria-label="Filter by kind">' + [['', 'Anything']].concat(TAGS).map(function(o){
     return '<button class="chipbtn" data-act="ptag" data-tag="' + o[0] + '" aria-pressed="' + (pick.tag === o[0]) + '">' + o[1] + '</button>';
   }).join('') + '</div>';
@@ -693,7 +695,12 @@ function renderPicker(){
     }
     SECS.forEach(function(sc){
       var list = ids.filter(function(id){ return !onToday(id) && secOf(id) === sc[0]; });
-      h += '<h3 class="sechead' + (sc[0] === 'timely' ? ' stop' : '') + '" style="margin:0" data-sec="' + sc[0] + '">' + sc[1] + '</h3>';
+      if (sc[0] === 'longterm' && list.length) {
+        h += '<div class="sechead fold" data-sec="longterm"><button class="foldbtn" id="pltfold" data-act="pltfold" aria-expanded="' + pick.lt + '"><span>Long term</span>' + I.chev + '</button></div>';
+        if (!pick.lt) return;
+      } else {
+        h += '<h3 class="sechead' + (sc[0] === 'timely' ? ' stop' : '') + '" style="margin:0" data-sec="' + sc[0] + '">' + sc[1] + '</h3>';
+      }
       list.slice(0, pick.shown).forEach(function(id){ h += candHTML(id, true); });
       if (list.length > pick.shown) more = true;
     });
@@ -785,6 +792,12 @@ document.addEventListener('click', function(e){
     render();
     var fb = document.getElementById('ltfold');
     if (fb) { fb.focus({preventScroll: true}); if (act === 'ltopen') fb.scrollIntoView({block: 'start', behavior: 'smooth'}); }
+  }
+  else if (act === 'pltfold') {
+    pick.lt = !pick.lt;
+    if (pick.lt) { S.ltSeen = Date.now(); save(); }
+    renderPicker();
+    var pf = document.getElementById('pltfold'); if (pf) pf.focus({preventScroll: true});
   }
   else if (act === 'ltlater') { S.ltLater = S.day; save(); render(); }
   else if (act === 'keep') { S.tasks[id].touched = Date.now(); save(); render(); }
@@ -919,6 +932,7 @@ function commitPick(list, id){
   var at = prevId ? S.reservoir.indexOf(prevId) + 1 : nextId ? S.reservoir.indexOf(nextId) : 0;
   S.reservoir.splice(Math.max(0, at), 0, id);
   save(); renderPicker();
+  if (!pick.lt && mySec === 'longterm') toast('Moved to Long term.');
 }
 function commitOrder(list, movedId){
   var sec = 'timely', ids = [], was = secOf(movedId);
