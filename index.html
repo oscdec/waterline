@@ -104,6 +104,10 @@ button.txt{align-self:stretch}
 .row.asleep .rowmain{color:var(--muted)}
 .sechead{font-size:14px;font-weight:600;color:var(--muted);padding:14px 4px 2px}
 .row.nohandle .rowmain{padding-left:16px}
+.sechead.fold{padding:8px 0 0}
+.foldbtn{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:56px;padding:0 16px;background:var(--surface);border-radius:16px;font-size:17px;font-weight:600;color:var(--ink);text-align:left}
+.foldbtn svg{flex:none;width:22px;height:22px;color:var(--muted);transition:transform .2s}
+.foldbtn[aria-expanded=true] svg{transform:rotate(180deg)}
 .subhead{margin:26px 0 10px;font-size:20px}
 .donelist{background:var(--surface);border-radius:18px;padding:6px 16px}
 .donelist li{display:flex;gap:12px;align-items:flex-start;padding:10px 0;overflow-wrap:anywhere}
@@ -157,9 +161,10 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 'use strict';
 
 var KEY = 'waterline.v1';
-var VERSION = '1.21';
+var VERSION = '1.22';
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
+var LT_DAYS = 14;
 var TAGS = [['oneday', 'One day'], ['project', 'Project']];
 function tagOf(t){ return t && t.tag === 'project' ? 'project' : 'oneday'; }
 
@@ -172,6 +177,7 @@ var I = {
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   repeat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3"/></svg>',
+  chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
   grip: '<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="7" cy="5" r="1.6"/><circle cx="13" cy="5" r="1.6"/><circle cx="7" cy="10" r="1.6"/><circle cx="13" cy="10" r="1.6"/><circle cx="7" cy="15" r="1.6"/><circle cx="13" cy="15" r="1.6"/></svg>'
 };
 
@@ -199,12 +205,12 @@ function esc(s){
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
 function fresh(){
-  return {v: 1, cap: 3, day: dayKey(), tasks: {}, today: [], done: [], reservoir: [], dinner: [], log: [], tomorrow: [], tomorrowFor: null, under: '', underOn: false, underNext: '', underFor: null};
+  return {v: 1, cap: 3, day: dayKey(), tasks: {}, today: [], done: [], reservoir: [], dinner: [], log: [], tomorrow: [], tomorrowFor: null, under: '', underOn: false, underNext: '', underFor: null, ltSeen: Date.now(), ltLater: null};
 }
 function valid(r){
   return r && r.v === 1 && r.tasks && Array.isArray(r.today) && Array.isArray(r.done) && Array.isArray(r.reservoir);
 }
-function fixUnder(r){ if (typeof r.under !== 'string') r.under = ''; r.underOn = r.underOn === true; if (typeof r.underNext !== 'string') r.underNext = ''; if (typeof r.underFor !== 'string') r.underFor = null; }
+function fixUnder(r){ if (typeof r.under !== 'string') r.under = ''; r.underOn = r.underOn === true; if (typeof r.underNext !== 'string') r.underNext = ''; if (typeof r.underFor !== 'string') r.underFor = null; if (typeof r.ltSeen !== 'number') r.ltSeen = Date.now(); }
 function load(){
   try {
     var r = JSON.parse(localStorage.getItem(KEY));
@@ -227,6 +233,8 @@ function isDinnerTime(){ var h = new Date().getHours(); return h >= 17 && h < 21
 var dinnerShown = false;
 
 var S = load();
+var ltOpen = false;
+save();
 var view = 'today';
 var pick = null;
 var form = null;
@@ -399,7 +407,11 @@ function reservoirHTML(){
           '<div class="brand"><span>Below The Surface</span></div><span style="width:44px"></span></div>';
   h += '<p class="muted" style="margin:16px 0 20px">Drag the handle to reorder, or to move a task to another section. Swipe right to let one go.</p>';
   var s = staleId();
-  if (s) {
+  var ltDue = !ltOpen && S.ltLater !== S.day && Date.now() - S.ltSeen >= LT_DAYS * 86400000 && inSec(S.reservoir, 'longterm').length > 0;
+  if (ltDue) {
+    h += '<div class="ask"><p>It has been a couple of weeks since you looked through your Long term items.</p>' +
+         '<div class="pair"><button class="btn quiet" data-act="ltopen">Look now</button><button class="btn quiet" data-act="ltlater">Not now</button></div></div>';
+  } else if (s) {
     h += '<div class="ask"><p class="muted" style="font-size:14px">This has been resting a while. Still want it?</p><p>' + esc(S.tasks[s].text) + '</p>' +
          '<div class="pair"><button class="btn quiet" data-act="keep" data-id="' + s + '">Keep it</button><button class="btn quiet" data-act="letgo" data-id="' + s + '">Let it go</button></div></div>';
   }
@@ -420,8 +432,14 @@ function reservoirHTML(){
         h += '<li class="sechead">Dinnertime</li>';
         dinner.forEach(function(id){ h += rowHTML(id, false); });
       }
-      h += '<li class="sechead' + (sc[0] === 'timely' ? ' stop' : '') + '" data-sec="' + sc[0] + '">' + sc[1] + '</li>';
-      inSec(S.reservoir, sc[0]).forEach(function(id){ h += rowHTML(id, true); });
+      var list = inSec(S.reservoir, sc[0]);
+      if (sc[0] === 'longterm' && list.length) {
+        h += '<li class="sechead fold" data-sec="longterm"><button class="foldbtn" id="ltfold" data-act="ltfold" aria-expanded="' + ltOpen + '"><span>Long term</span>' + I.chev + '</button></li>';
+        if (!ltOpen) return;
+      } else {
+        h += '<li class="sechead' + (sc[0] === 'timely' ? ' stop' : '') + '" data-sec="' + sc[0] + '">' + sc[1] + '</li>';
+      }
+      list.forEach(function(id){ h += rowHTML(id, true); });
     });
     h += '</ul>';
   }
@@ -517,6 +535,7 @@ function hist(){ try { return history.state || {}; } catch (e) { return {}; } }
 function go(v){
   if (view === 'today') { try { history.pushState({v: v}, ''); } catch (e) {} }
   else { try { history.replaceState({v: v}, ''); } catch (e) {} }
+  if (v === 'reservoir') ltOpen = false;
   view = v; render(); window.scrollTo(0, 0);
 }
 function goHome(){
@@ -760,6 +779,14 @@ document.addEventListener('click', function(e){
   else if (act === 'settings') { go('settings'); }
   else if (act === 'home') { goHome(); }
   else if (act === 'close') { sheet.close(); }
+  else if (act === 'ltfold' || act === 'ltopen') {
+    ltOpen = act === 'ltopen' ? true : !ltOpen;
+    if (ltOpen) { S.ltSeen = Date.now(); save(); }
+    render();
+    var fb = document.getElementById('ltfold');
+    if (fb) { fb.focus({preventScroll: true}); if (act === 'ltopen') fb.scrollIntoView({block: 'start', behavior: 'smooth'}); }
+  }
+  else if (act === 'ltlater') { S.ltLater = S.day; save(); render(); }
   else if (act === 'keep') { S.tasks[id].touched = Date.now(); save(); render(); }
   else if (act === 'letgo') { letGo(id); }
   else if (act === 'undo') { var u = undoFn; undoFn = null; clearTimeout(toastTimer); toastEl.classList.remove('on', 'act'); if (u) u(); }
@@ -894,15 +921,17 @@ function commitPick(list, id){
   save(); renderPicker();
 }
 function commitOrder(list, movedId){
-  var sec = 'timely', ids = [];
+  var sec = 'timely', ids = [], was = secOf(movedId);
   [].forEach.call(list.children, function(li){
     if (li.classList.contains('sechead')) { if (li.dataset.sec) sec = li.dataset.sec; return; }
     var t = S.tasks[li.dataset.id]; if (!t || S.dinner.indexOf(li.dataset.id) >= 0) return;
     t.sec = sec; ids.push(li.dataset.id);
   });
+  S.reservoir.forEach(function(x){ if (ids.indexOf(x) < 0 && S.tasks[x] && S.dinner.indexOf(x) < 0) ids.push(x); });
   S.reservoir = ids;
   if (S.tasks[movedId]) S.tasks[movedId].touched = Date.now();
   save(); render();
+  if (!ltOpen && was !== 'longterm' && S.tasks[movedId] && secOf(movedId) === 'longterm') toast('Moved to Long term.');
 }
 document.addEventListener('pointerup', endDrag);
 document.addEventListener('pointercancel', endDrag);
