@@ -104,8 +104,10 @@ button.txt{align-self:stretch}
 .row.asleep .rowmain{color:var(--muted)}
 .sechead{font-size:14px;font-weight:600;color:var(--muted);padding:14px 4px 2px}
 .row.nohandle .rowmain{padding-left:16px}
-.sechead.fold{padding:0;margin-bottom:-8px}
-.foldbtn{display:flex;align-items:center;justify-content:flex-start;gap:6px;width:100%;min-height:44px;padding:14px 4px 10px;font-size:14px;font-weight:600;line-height:1.45;color:var(--muted);text-align:left;border-radius:10px}
+.sechead.fold{padding:0;margin-bottom:-8px;display:flex;align-items:center;gap:8px}
+.minibtn{flex:none;min-height:36px;margin-top:4px;padding:0 14px;border-radius:18px;background:var(--soft);color:var(--ink);font-size:14px;font-weight:600}
+.minibtn[aria-disabled=true]{background:none;color:var(--muted);padding-right:4px}
+.foldbtn{display:flex;align-items:center;justify-content:flex-start;gap:6px;flex:1;min-width:0;min-height:44px;padding:14px 4px 10px;font-size:14px;font-weight:600;line-height:1.45;color:var(--muted);text-align:left;border-radius:10px}
 .foldbtn svg{flex:none;width:16px;height:16px;transition:transform .2s}
 .foldbtn[aria-expanded=true] svg{transform:rotate(180deg)}
 .subhead{margin:26px 0 10px;font-size:20px}
@@ -161,7 +163,7 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 'use strict';
 
 var KEY = 'waterline.v1';
-var VERSION = '1.25';
+var VERSION = '1.26';
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
 var LT_DAYS = 14;
@@ -233,7 +235,11 @@ function isDinnerTime(){ var h = new Date().getHours(); return h >= 17 && h < 21
 var dinnerShown = false;
 
 var S = load();
-var ltOpen = false;
+var ltOpen = false, restOpen = false, ltReset = false;
+function resting(id){ var t = S.tasks[id]; return !!(t && t.notBefore && t.notBefore > S.day); }
+function resetBtn(act){
+  return ltReset ? '<button class="minibtn" aria-disabled="true" tabindex="-1">Count reset</button>' : '<button class="minibtn" data-act="' + act + '">Reset 2 week count</button>';
+}
 save();
 var view = 'today';
 var pick = null;
@@ -407,7 +413,7 @@ function reservoirHTML(){
           '<div class="brand"><span>Below The Surface</span></div><span style="width:44px"></span></div>';
   h += '<p class="muted" style="margin:16px 0 20px">Drag the handle to reorder, or to move a task to another section. Swipe right to let one go.</p>';
   var s = staleId();
-  var ltDue = !ltOpen && S.ltLater !== S.day && Date.now() - S.ltSeen >= LT_DAYS * 86400000 && inSec(S.reservoir, 'longterm').length > 0;
+  var ltDue = !ltOpen && S.ltLater !== S.day && Date.now() - S.ltSeen >= LT_DAYS * 86400000 && inSec(S.reservoir, 'longterm').some(function(id){ return !resting(id); });
   if (ltDue) {
     h += '<div class="ask"><p>It has been a couple of weeks since you looked through your Long term items.</p>' +
          '<div class="pair"><button class="btn quiet" data-act="ltopen">Look now</button><button class="btn quiet" data-act="ltlater">Not now</button></div></div>';
@@ -415,12 +421,13 @@ function reservoirHTML(){
     h += '<div class="ask"><p class="muted" style="font-size:14px">This has been resting a while. Still want it?</p><p>' + esc(S.tasks[s].text) + '</p>' +
          '<div class="pair"><button class="btn quiet" data-act="keep" data-id="' + s + '">Keep it</button><button class="btn quiet" data-act="letgo" data-id="' + s + '">Let it go</button></div></div>';
   }
-  function rowHTML(id, handle){
+  function rowHTML(id, handle, rest){
     var t = S.tasks[id]; if (!t) return '';
     var asleep = t.notBefore && t.notBefore > S.day;
-    return '<li class="row' + (asleep ? ' asleep' : '') + (handle ? '' : ' nohandle') + '" data-id="' + id + '">' +
+    var secName = rest ? SECS.filter(function(sc){ return sc[0] === secOf(id); })[0][1] + ' · ' : '';
+    return '<li class="row' + (asleep ? ' asleep' : '') + (rest ? ' rest' : '') + (handle ? '' : ' nohandle') + '" data-id="' + id + '">' +
       (handle ? '<button class="handle" data-id="' + id + '" aria-label="Reorder: ' + esc(t.text) + '. Use the up and down arrow keys.">' + I.grip + '</button>' : '') +
-      '<button class="rowmain" data-act="edit" data-id="' + id + '">' + esc(t.text) + tagLine(t, asleep ? 'Resting until ' + shortDate(t.notBefore) : '') + '</button></li>';
+      '<button class="rowmain" data-act="edit" data-id="' + id + '">' + esc(t.text) + tagLine(t, asleep ? secName + 'Resting until ' + shortDate(t.notBefore) : '') + '</button></li>';
   }
   var dinner = S.dinner.filter(function(id){ return S.tasks[id]; });
   if (!S.reservoir.length && !dinner.length) {
@@ -432,15 +439,20 @@ function reservoirHTML(){
         h += '<li class="sechead">Dinnertime</li>';
         dinner.forEach(function(id){ h += rowHTML(id, false); });
       }
-      var list = inSec(S.reservoir, sc[0]);
+      var list = inSec(S.reservoir, sc[0]).filter(function(id){ return !resting(id); });
       if (sc[0] === 'longterm' && list.length) {
-        h += '<li class="sechead fold" data-sec="longterm"><button class="foldbtn" id="ltfold" data-act="ltfold" aria-expanded="' + ltOpen + '"><span>Long term</span>' + I.chev + '</button></li>';
+        h += '<li class="sechead fold" data-sec="longterm"><button class="foldbtn" id="ltfold" data-act="ltfold" aria-expanded="' + ltOpen + '"><span>Long term</span>' + I.chev + '</button>' + (ltOpen ? resetBtn('ltreset') : '') + '</li>';
         if (!ltOpen) return;
       } else {
         h += '<li class="sechead' + (sc[0] === 'timely' ? ' stop' : '') + '" data-sec="' + sc[0] + '">' + sc[1] + '</li>';
       }
       list.forEach(function(id){ h += rowHTML(id, true); });
     });
+    var rest = S.reservoir.filter(resting).sort(function(a, b){ return S.tasks[a].notBefore < S.tasks[b].notBefore ? -1 : S.tasks[a].notBefore > S.tasks[b].notBefore ? 1 : 0; });
+    if (rest.length) {
+      h += '<li class="sechead fold nodrop"><button class="foldbtn" id="restfold" data-act="restfold" aria-expanded="' + restOpen + '"><span>Resting</span>' + I.chev + '</button></li>';
+      if (restOpen) rest.forEach(function(id){ h += rowHTML(id, false, true); });
+    }
     h += '</ul>';
   }
   h += '<button class="fab" data-act="capture" aria-label="Add a task">' + I.plus + '</button>';
@@ -536,7 +548,8 @@ function hist(){ try { return history.state || {}; } catch (e) { return {}; } }
 function go(v){
   if (view === 'today') { try { history.pushState({v: v}, ''); } catch (e) {} }
   else { try { history.replaceState({v: v}, ''); } catch (e) {} }
-  if (v === 'reservoir') ltOpen = false;
+  if (v === 'reservoir') { ltOpen = false; restOpen = false; }
+  ltReset = false;
   view = v; render(); window.scrollTo(0, 0);
 }
 function goHome(){
@@ -621,6 +634,7 @@ function submitForm(f){
     S.tasks[id] = {id: id, text: text, created: Date.now()};
   }
   var t = S.tasks[id];
+  var oldNb = t.notBefore || '';
   t.text = text; t.tag = tag; t.notBefore = nb; t.notes = notes; t.touched = Date.now();
   var inDinner = S.dinner.indexOf(id) >= 0;
   if (place === 'dinner') {
@@ -633,7 +647,8 @@ function submitForm(f){
     if (inDinner) { S.dinner = S.dinner.filter(function(x){ return x !== id; }); S.reservoir.push(id); }
     else if (isNew) S.reservoir.push(id);
   }
-  if (isNew) toast(place === 'dinner' ? 'Saved for dinnertime.' : 'Tucked away below the surface.');
+  if (place !== 'dinner' && nb > S.day && nb !== oldNb && S.reservoir.indexOf(id) >= 0) toast('Resting until ' + shortDate(nb) + '.');
+  else if (isNew) toast(place === 'dinner' ? 'Saved for dinnertime.' : 'Tucked away below the surface.');
   save(); sheet.close(); render();
 }
 
@@ -660,7 +675,7 @@ function candidates(filtered){
 function openPicker(mode){
   pick = {mode: mode, sel: {}, tag: '', shown: 5, limit: pickLimit(mode), lt: false};
   if (mode === 'tomorrow') plannedTomorrow().forEach(function(id){ pick.sel[id] = true; if (S.today.indexOf(id) < 0 && secOf(id) === 'longterm') pick.lt = true; });
-  if (pick.lt) { S.ltSeen = Date.now(); save(); }
+  ltReset = false;
   renderPicker();
   showSheet();
   sizeUnder();
@@ -696,7 +711,7 @@ function renderPicker(){
     SECS.forEach(function(sc){
       var list = ids.filter(function(id){ return !onToday(id) && secOf(id) === sc[0]; });
       if (sc[0] === 'longterm' && list.length) {
-        h += '<div class="sechead fold" data-sec="longterm"><button class="foldbtn" id="pltfold" data-act="pltfold" aria-expanded="' + pick.lt + '"><span>Long term</span>' + I.chev + '</button></div>';
+        h += '<div class="sechead fold" data-sec="longterm"><button class="foldbtn" id="pltfold" data-act="pltfold" aria-expanded="' + pick.lt + '"><span>Long term</span>' + I.chev + '</button>' + (pick.lt ? resetBtn('pltreset') : '') + '</div>';
         if (!pick.lt) return;
       } else {
         h += '<h3 class="sechead' + (sc[0] === 'timely' ? ' stop' : '') + '" style="margin:0" data-sec="' + sc[0] + '">' + sc[1] + '</h3>';
@@ -788,16 +803,25 @@ document.addEventListener('click', function(e){
   else if (act === 'close') { sheet.close(); }
   else if (act === 'ltfold' || act === 'ltopen') {
     ltOpen = act === 'ltopen' ? true : !ltOpen;
-    if (ltOpen) { S.ltSeen = Date.now(); save(); }
+    ltReset = false;
     render();
     var fb = document.getElementById('ltfold');
     if (fb) { fb.focus({preventScroll: true}); if (act === 'ltopen') fb.scrollIntoView({block: 'start', behavior: 'smooth'}); }
   }
   else if (act === 'pltfold') {
     pick.lt = !pick.lt;
-    if (pick.lt) { S.ltSeen = Date.now(); save(); }
+    ltReset = false;
     renderPicker();
     var pf = document.getElementById('pltfold'); if (pf) pf.focus({preventScroll: true});
+  }
+  else if (act === 'ltreset' || act === 'pltreset') {
+    S.ltSeen = Date.now(); S.ltLater = null; ltReset = true; save();
+    if (act === 'pltreset') renderPicker(); else render();
+    var lf = document.getElementById(act === 'pltreset' ? 'pltfold' : 'ltfold'); if (lf) lf.focus({preventScroll: true});
+  }
+  else if (act === 'restfold') {
+    restOpen = !restOpen; render();
+    var rf = document.getElementById('restfold'); if (rf) rf.focus({preventScroll: true});
   }
   else if (act === 'ltlater') { S.ltLater = S.day; save(); render(); }
   else if (act === 'keep') { S.tasks[id].touched = Date.now(); save(); render(); }
@@ -889,7 +913,7 @@ document.addEventListener('pointermove', function(e){
   var row = drag.row, list = row.parentNode;
   var next = row.nextElementSibling, prev = row.previousElementSibling;
   var before = row.offsetTop, r;
-  if (next) {
+  if (next && !next.classList.contains('nodrop')) {
     r = next.getBoundingClientRect();
     if (e.clientY > r.top + r.height / 2) list.insertBefore(next, row);
   }
@@ -938,7 +962,7 @@ function commitOrder(list, movedId){
   var sec = 'timely', ids = [], was = secOf(movedId);
   [].forEach.call(list.children, function(li){
     if (li.classList.contains('sechead')) { if (li.dataset.sec) sec = li.dataset.sec; return; }
-    var t = S.tasks[li.dataset.id]; if (!t || S.dinner.indexOf(li.dataset.id) >= 0) return;
+    var t = S.tasks[li.dataset.id]; if (!t || li.classList.contains('rest') || S.dinner.indexOf(li.dataset.id) >= 0) return;
     t.sec = sec; ids.push(li.dataset.id);
   });
   S.reservoir.forEach(function(x){ if (ids.indexOf(x) < 0 && S.tasks[x] && S.dinner.indexOf(x) < 0) ids.push(x); });
@@ -960,7 +984,7 @@ document.addEventListener('keydown', function(e){
     list.insertBefore(row, pv);
   } else {
     var nx = row.nextElementSibling;
-    if (!nx) return;
+    if (!nx || nx.classList.contains('nodrop')) return;
     list.insertBefore(nx, row);
   }
   commitMove(list, id);
