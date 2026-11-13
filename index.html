@@ -166,7 +166,7 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 'use strict';
 
 var KEY = 'waterline.v1';
-var VERSION = '1.27';
+var VERSION = '1.28';
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
 var LT_DAYS = 14;
@@ -312,16 +312,16 @@ function rollover(){
 
 function clearToday(){
   var before = JSON.stringify(S);
-  S.done.slice().forEach(function(id){
-    var t = S.tasks[id]; if (!t) return;
+  var isDinner = function(id){ return S.dinner.indexOf(id) >= 0; };
+  S.done.forEach(function(id){
+    var t = S.tasks[id]; if (!t || isDinner(id)) return;
     S.log.push({day: S.day, text: t.text});
-    if (t.keep && S.dinner.indexOf(id) < 0) t.keep = false; else delete S.tasks[id];
+    if (t.keep) t.keep = false; else delete S.tasks[id];
   });
-  S.dinner = S.dinner.filter(function(id){ return S.tasks[id]; });
-  S.dinner.forEach(function(id){ S.tasks[id].awayDay = S.day; });
+  S.done = S.done.filter(function(id){ return S.tasks[id] && isDinner(id); });
   var back = S.today.filter(function(id){ return S.tasks[id]; });
   S.reservoir = back.concat(S.reservoir.filter(function(id){ return back.indexOf(id) < 0; }));
-  S.today = []; S.done = []; S.clearedDay = S.day;
+  S.today = []; S.clearedDay = S.day;
   save(); render(); window.scrollTo(0, 0);
   toast('Today is cleared.', function(){ S = JSON.parse(before); save(); render(); });
 }
@@ -364,7 +364,7 @@ function todayHTML(){
   if (!isInstalled()) h += '<button class="btn full" style="margin-top:14px" data-act="install">' + I.down + 'Install Waterline on this phone</button>';
   h += '<p class="date">' + esc(niceDate(S.day)) + '</p>';
   var hr = new Date().getHours();
-  var canClear = (hr >= 17 || hr < DAY_STARTS_AT) && (S.today.length > 0 || (isDinnerTime() && S.dinner.some(function(id){ return S.tasks[id] && S.tasks[id].awayDay !== S.day; })));
+  var canClear = (hr >= 17 || hr < DAY_STARTS_AT) && S.today.length > 0;
   h += '<div class="headrow"><h1>Today</h1>' + (canClear ? '<button class="minibtn" data-act="cleartoday">Clear today</button>' : '') + '</div>';
   if (S.underOn) h += '<textarea class="under" id="under" rows="1" maxlength="140" enterkeyhint="done" autocomplete="off" placeholder="Today\'s undercurrent" aria-label="Today\'s undercurrent">' + esc(S.under) + '</textarea>';
 
@@ -390,7 +390,7 @@ function todayHTML(){
   }
 
   if (empty && S.clearedDay === S.day) {
-    if (!dinner.length) h += '<div class="state"><h2>Today is put away</h2><p class="muted">What you finished is in This Week. The rest is back below the surface.</p>' +
+    h += '<div class="state"><h2>Today is put away</h2><p class="muted">What you finished is in This Week. The rest is back below the surface.</p>' +
          (hasRes ? '<button class="link" data-act="pick" data-mode="today">Bring something back up</button>' : '') + '</div>';
   } else if (empty && !anyRes) {
     h += '<div class="state"><h2>Nothing here yet</h2><p class="muted">Add everything on your mind. It waits below the surface until you choose a few for the day.</p>' +
