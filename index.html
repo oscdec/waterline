@@ -166,7 +166,7 @@ legend{font-size:14px;color:var(--muted);padding:0;margin-bottom:8px}
 'use strict';
 
 var KEY = 'waterline.v1';
-var VERSION = '1.28';
+var VERSION = '1.29';
 var DAY_STARTS_AT = 4;
 var STALE_DAYS = 28;
 var LT_DAYS = 14;
@@ -697,7 +697,7 @@ function candidates(filtered){
   return ids;
 }
 function openPicker(mode){
-  pick = {mode: mode, sel: {}, tag: '', shown: 5, limit: pickLimit(mode), lt: false};
+  pick = {mode: mode, sel: {}, tag: '', shown: mode === 'tomorrow' ? Infinity : 5, limit: pickLimit(mode), lt: false};
   if (mode === 'tomorrow') plannedTomorrow().forEach(function(id){ pick.sel[id] = true; if (S.today.indexOf(id) < 0 && secOf(id) === 'longterm') pick.lt = true; });
   ltReset = false;
   renderPicker();
@@ -861,7 +861,7 @@ document.addEventListener('click', function(e){
   else if (act === 'under') { S.underOn = !!el.dataset.on; save(); render(); }
   else if (act === 'export') { exportData(); }
   else if (act === 'import') { document.getElementById('importer').click(); }
-  else if (act === 'ptag') { pick.tag = el.dataset.tag; pick.shown = 5; renderPicker(); }
+  else if (act === 'ptag') { pick.tag = el.dataset.tag; pick.shown = pick.mode === 'tomorrow' ? Infinity : 5; renderPicker(); }
   else if (act === 'pmore') { pick.shown += 5; renderPicker(); }
   else if (act === 'psel') {
     if (pick.sel[id]) delete pick.sel[id];
